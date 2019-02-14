@@ -1,59 +1,96 @@
-class Packet(object):
+""" Packet base class and common derivatives """
+from packeter import fields
+
+class BasePacket(object):
     """
     Packet Base class
     Do not derive from this base class, use BigEndian and LittleEndian instead
     """
     big_endian = None
-    name = "Unknown Packet"
     fields = []
 
     def __init__(self, **kwargs):
-        self.clear()
+        # Bootstrap the doc-string for the packet name for convenience
+        if not hasattr(self, 'name') and self.__doc__:
+            self.name = self.__doc__.strip()
+        elif not hasattr(self, 'name'):
+            self.name = 'Unknown Packet'
 
-        for name, value in kwargs:
-            for field in self.fields:
-                if name == field.name:
-                    field = value
+        # Register fields and create a lookup name table
+        self._fnames = []
+        for field in self.fields:
+            field.register(self)
+            self._fnames.append(field.name)
+
+        # Set field values to what's given or their defaults
+        self.clear()
+        for name, value in kwargs.iteritems():
+            idx = self._fnames.index(name)
+            field = self.fields[idx]
+            field.set(value)
+
+    @classmethod
+    def from_packed(cls, packed):
+        """ Initialize a new packet from the packed data """
+        instance = cls()
+        instance.unpack(packed)
+        return instance
 
     def __str__(self):
         raw = self.pack()
         msg = b''.join(['\\x{:02x}'.format(x) for x in raw])
-        print msg
+        return msg
 
     def __repr__(self):
-        msg = "### {} ###".format(self.name)
+        msg = "<Packet: {}>\n".format(self.name)
         for field in self.fields:
-            msg += "{}: {}".format(field.name, field.value)
-        print msg
+            msg += "  {}: {}\n".format(field.name, field.value)
+        msg = msg[:-1]
+        return msg
 
     def __getitem__(self, key):
         # Access by index, auto raises
         if isinstance(key, int):
-            return self.fields[key]
-        # Access by field name
+            field = self.fields[key]
         elif isinstance(key, basestring):
-            for field in self.fields:
-                if field.name == key:
-                    return field
-        # This point is only reached in bad requests, or bad field names
-        raise KeyError(key)
+            idx = self._fnames.index(key)
+            field = self.fields[idx]
+            if isinstance(field, fields.Padding):
+                raise KeyError(key)
+        else:
+            raise KeyError(key)
+        return field.value
 
     def __setitem__(self, key, value):
         # Access by index, auto raises
         if isinstance(key, int):
-            self.fields[key] = value
-            return
-        # Access by field name
+            field = self.fields[key]
         elif isinstance(key, basestring):
-            for field in self.fields:
-                if field.name == key:
-                    field = value
-                    return
-        # This point is only reached in bad requests, or bad field names
-        raise KeyError(key)
+            idx = self._fnames.index(key)
+            field = self.fields[idx]
+            if isinstance(field, fields.Padding):
+                raise KeyError(key)
+        else:
+            raise KeyError(key)
+        field.set(value)
 
     def __iter__(self):
         return self.fields.__iter__()
+
+    def __eq__(self, rhs):
+        if self.__class__ == rhs.__class__:
+            equal = True
+            for name, value in self.iteritems():
+                equal &= value == rhs[name]
+            return equal
+        return NotImplemented
+
+    def __ne__(self, rhs):
+        equal = self.__eq__(rhs)
+        if equal is not NotImplemented:
+            return not equal
+        return NotImplemented
+
 
     def pack(self):
         """ Fetch the packed raw byte string of the packet """
@@ -71,11 +108,10 @@ class Packet(object):
             field.unpack(part, big_endian=self.big_endian)
             start = end
 
-
     def clear(self):
         """ Clear all field values to their defaults """
         for field in self.fields:
-            field.clear()
+            field.reset()
 
     def size(self):
         """ Calculate the packet size """
@@ -98,52 +134,45 @@ class Packet(object):
 
     def keys(self):
         """ Fetch a list of the field names """
-        result = []
-        for field in self.fields:
-            result.append(field.name)
-        return result
+        return [x.name for x in self.fields if not isinstance(x, fields.Padding)]
 
     def values(self):
         """ Fetch a list of the field values """
-        result = []
-        for field in self.fields:
-            result.append(field.value)
-        return result
+        return [x.value for x in self.fields if not isinstance(x, fields.Padding)]
 
     def items(self):
         """ Fetch a list of field name value pairs """
-        result = []
-        for field in self.fields:
-            pair = (field.name, field.value)
-            result.append(pair)
-        return result
+        return [(x.name, x.value) for x in self.fields if not isinstance(x, fields.Padding)]
 
     def iterkeys(self):
         """ Fetch a field name iterator """
         for field in self.fields:
+            if isinstance(field, fields.Padding):
+                continue
             yield field.name
 
     def itervalues(self):
         """ Fetch a field value iterator """
         for field in self.fields:
+            if isinstance(field, fields.Padding):
+                continue
             yield field.value
 
     def iteritems(self):
         """ Fetch a field name, value pair iterator """
         for field in self.fields:
+            if isinstance(field, fields.Padding):
+                continue
             yield (field.name, field.value)
 
     def dict(self):
         """ Fetch the packet as an ordered dictionary """
-        result = {}
-        for field in self.fields:
-            result[field.name] = field.value
-        return result
+        return {name:value for name, value in self.items()}
 
-class BigEndian(Packet):
+class BigEndian(BasePacket):
     """ Big Endian Packet Class """
     big_endian = True
 
-class LittleEndian(Packet):
+class LittleEndian(BasePacket):
     """ Little Endian Packet Class """
     big_endian = False

@@ -1,33 +1,83 @@
-### IMPORTS ###
+""" Field classes - Classes used to define a packets components """
 import struct
 
-### CLASSES ###
-class Field(object):
+class BaseField(object):
     """
     Field Base class
     Do not derive from this class, but use the pre-existing type classes instead
     """
-
     def __init__(self, name, _type, count, default):
-        self.name   = name
-        self.type   = _type
-        self.count  = count
-        self.value  = default
-        self.format = str(self.count) + self.type
+        assert _type in 'xcbB?hHiIqQfds_'
 
-        assert self.type in 'xcbB?hHiIqQfds'
+        # Private variables
+        self._parent = None
+        self._default_value = default
+        self._value = self._default_value
+        self._count = count
+
+        # Public variables
+        self.name = name
+        self.type = _type
+
+    @property
+    def value(self):
+        """ Read only value to force set and rest commands """
+        return self._value
+
+    @property
+    def count(self):
+        """ Read only value to force lookup when dynamic """
+        # Dynamic sizing. Lookup the value in the parent packet's appropriate
+        #  field
+        if isinstance(self._count, basestring):
+            return int(self._parent[self._count])
+
+        # Static Sizing
+        return int(self._count)
+
+    def register(self, packet):
+        """ Register to a packet class, allows for dynamic counts """
+        self._parent = packet
+
+    def reset(self):
+        """ Reset the internal value to the default """
+        self._value = self._default_value
+
+    def set(self, value):
+        """ Set the internal value """
+        self._value = value
 
     def pack(self, big_endian=True):
         """ Pack the field value into a raw byte string """
-        fmt = '>' if big_endian else '<'
-        fmt += self.format
-        return struct.pack(fmt, self.value)
+        # Capture variables now in case they're dynamic
+        count = self.count
+        value = self._value
 
-    def unpack(self, value, big_endian=True):
-        """ Unpack a given value into this fields value store """
+        # Repeating cases use multiple values
         fmt = '>' if big_endian else '<'
-        fmt += self.format
-        self.value = struct.unpack(fmt, value)
+        if count > 1:
+            fmt += str(count) + self.type
+            return struct.pack(fmt, *value)
+
+        # Non-repeating cases use a single value directly
+        fmt += self.type
+        return struct.pack(fmt, value)
+
+    def unpack(self, raw, big_endian=True):
+        """ Unpack a given value into this fields value store """
+        # Capture variables now in case they're dynamic
+        count = self.count
+
+        # Repeating cases store multiple values
+        fmt = '>' if big_endian else '<'
+        if count > 1:
+            fmt += str(count) + self.type
+            self._value = list(struct.unpack(fmt, raw))
+
+        # Non-repeating cases store a single value directly
+        else:
+            fmt += self.type
+            self._value = struct.unpack(fmt, raw)[0]
 
     def size(self):
         """ Fetch the size of this field """
@@ -39,73 +89,121 @@ class Field(object):
             return 4 * self.count
         elif self.type in 'qQd':
             return 8 * self.count
+        elif self.type == '_':
+            return self._value.size()
+        else:
+            raise RuntimeError("Invalid field type {}".format(self.type))
 
-class Padding(Field):
+class Padding(BaseField):
     """ Padding Field Type (1 Byte) """
-    def __init__(self, name, count=1):
-        super(Padding, self).__init__(name, 'x', count, None)
+    def __init__(self, count=1):
+        super(Padding, self).__init__('padding', 'x', count, None)
 
-class Char(Field):
+    def unpack(self, *args, **kwargs):
+        """ Padding shouldn't unpack """
+        return
+
+class Char(BaseField):
     """ Character Field Type (1 Byte) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default='\x00'):
         super(Char, self).__init__(name, 'c', count, default)
 
-class Bool(Field):
+class Bool(BaseField):
     """ Boolean Field Type (1 Byte) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=False):
         super(Bool, self).__init__(name, '?', count, default)
 
-class Int8(Field):
+class Int8(BaseField):
     """ Signed Integer Type (1 Byte) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0):
         super(Int8, self).__init__(name, 'b', count, default)
 
-class UInt8(Field):
+class UInt8(BaseField):
     """ Unsigned Integer Type (1 Byte) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0):
         super(UInt8, self).__init__(name, 'B', count, default)
 
-class Int16(Field):
+class Int16(BaseField):
     """ Signed Integer Type (2 Bytes) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0):
         super(Int16, self).__init__(name, 'h', count, default)
 
-class UInt16(Field):
+class UInt16(BaseField):
     """ Unsigned Integer Type (2 Bytes) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0):
         super(UInt16, self).__init__(name, 'H', count, default)
 
-class Int32(Field):
+class Int32(BaseField):
     """ Signed Integer Type (4 Bytes) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0):
         super(Int32, self).__init__(name, 'i', count, default)
 
-class UInt32(Field):
+class UInt32(BaseField):
     """ Unsigned Integer Type (4 Bytes) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0):
         super(UInt32, self).__init__(name, 'I', count, default)
 
-class Int64(Field):
+class Int64(BaseField):
     """ Signed Integer Type (8 Bytes) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0):
         super(Int64, self).__init__(name, 'q', count, default)
 
-class UInt64(Field):
+class UInt64(BaseField):
     """ Unsigned Integer Type (8 Bytes) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0):
         super(UInt64, self).__init__(name, 'Q', count, default)
 
-class Float(Field):
+class Float(BaseField):
     """ Float Type (4 Bytes) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0.0):
         super(Float, self).__init__(name, 'f', count, default)
 
-class Double(Field):
+class Double(BaseField):
     """ Double Type (8 Bytes) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, count=1, default=0.0):
         super(Double, self).__init__(name, 'd', count, default)
 
-class String(Field):
+class String(BaseField):
     """ String Type (Variable Size) """
-    def __init__(self, name, size, default=None):
+    def __init__(self, name, size, default=''):
         super(String, self).__init__(name, 's', size, default)
+
+    def pack(self, big_endian=True):
+        """ Pack the string into the correct size and endianness """
+        # Capture variables now in case they're dynamic
+        count = self.count
+        value = self._value
+
+        # Strings always use a size value, and only store one string
+        fmt = '>' if big_endian else '<' + str(count) + self.type
+        return struct.pack(fmt, value)
+
+    def unpack(self, raw, big_endian=True):
+        """ Unpack raw bytes into the strings value """
+        # Capture variables now in case they're dynamic
+        count = self.count
+
+        # Strings always use a size value, and only store one string
+        fmt = '>' if big_endian else '<' + str(count) + self.type
+        unpacked = struct.unpack(fmt, raw)[0]
+
+        # Strip trailing null bytes for convienence
+        self._value = unpacked.rstrip('\x00')
+
+class Raw(String):
+    """ Raw Data Type (Variable Size) """
+    def __init__(self, name, size, default=b''):
+        super(Raw, self).__init__(name, size, default)
+
+class Packet(BaseField):
+    """ Sub-packet (Variable size) """
+    def __init__(self, name, count=1, default=None):
+        super(Packet, self).__init__(name, '_', count, default)
+
+    def pack(self, *args, **kwargs):
+        """ Hack the packet pack itself """
+        return self._value.pack()
+
+    def unpack(self, raw, *args, **kwargs):
+        """ Have the packet unpack the raw data """
+        self._value.unpack(raw)
