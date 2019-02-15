@@ -1,5 +1,5 @@
 """ Packet base class and common derivatives """
-from packeter import fields
+from packeteer import fields
 
 class BasePacket(object):
     """
@@ -16,30 +16,33 @@ class BasePacket(object):
         elif not hasattr(self, 'name'):
             self.name = 'Unknown Packet'
 
-        # Register fields and create a lookup name table
-        self._fnames = []
-        for field in self.fields:
+        # Register fields and create lookup tables
+        self._fnames = {}
+        self._fidx = {}
+        parse_idx = 0
+        for idx, field in enumerate(self.fields):
             field.register(self)
-            self._fnames.append(field.name)
+            if not isinstance(field, fields.Padding):
+                self._fnames[field.name] = idx
+                self._fidx[parse_idx] = idx
+            parse_idx += 1
 
         # Set field values to what's given or their defaults
         self.clear()
         for name, value in kwargs.iteritems():
-            idx = self._fnames.index(name)
+            idx = self._fnames[name]
             field = self.fields[idx]
             field.set(value)
 
     @classmethod
-    def from_packed(cls, packed):
-        """ Initialize a new packet from the packed data """
+    def from_raw(cls, packed):
+        """ Initialize a new packet from the raw bytes """
         instance = cls()
         instance.unpack(packed)
         return instance
 
     def __str__(self):
-        raw = self.pack()
-        msg = b''.join(['\\x{:02x}'.format(x) for x in raw])
-        return msg
+        return self.pack()
 
     def __repr__(self):
         msg = "<Packet: {}>\n".format(self.name)
@@ -49,29 +52,37 @@ class BasePacket(object):
         return msg
 
     def __getitem__(self, key):
-        # Access by index, auto raises
+        # Get field by index
         if isinstance(key, int):
-            field = self.fields[key]
+            try:
+                idx = self._fidx[key]
+            except KeyError:
+                raise IndexError(key)
+        # Get field by name
         elif isinstance(key, basestring):
-            idx = self._fnames.index(key)
-            field = self.fields[idx]
-            if isinstance(field, fields.Padding):
-                raise KeyError(key)
+            idx = self._fnames[key]
+        # Other accessors not supported
         else:
             raise KeyError(key)
+        # Return value
+        field = self.fields[idx]
         return field.value
 
     def __setitem__(self, key, value):
-        # Access by index, auto raises
+        # Get field by index
         if isinstance(key, int):
-            field = self.fields[key]
+            try:
+                idx = self._fidx[key]
+            except KeyError:
+                raise IndexError(key)
+        # Get field by name
         elif isinstance(key, basestring):
-            idx = self._fnames.index(key)
-            field = self.fields[idx]
-            if isinstance(field, fields.Padding):
-                raise KeyError(key)
+            idx = self._fnames[key]
+        # Other accessors not supported
         else:
             raise KeyError(key)
+        # Set Value
+        field = self.fields[idx]
         field.set(value)
 
     def __iter__(self):
@@ -90,7 +101,6 @@ class BasePacket(object):
         if equal is not NotImplemented:
             return not equal
         return NotImplemented
-
 
     def pack(self):
         """ Fetch the packed raw byte string of the packet """

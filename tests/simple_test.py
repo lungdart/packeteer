@@ -4,7 +4,7 @@ import struct
 import copy
 import pytest #pylint: disable=unused-import
 from tests.values import good_values, set_values #pylint: disable=unused-import
-from packeter import packets, fields
+from packeteer import packets, fields
 
 # Expected values and formats
 KEYS_PACKET   = ['char', 'bool', 'int8', 'int16', 'int32', 'int64', 'uint8',
@@ -48,55 +48,44 @@ def extract_values(values):
 
 ### TESTS ###
 # Helper tests
-def test_struct_be(good_values): #pylint: disable=redefined-outer-name
-    """ Test the helper functions against the PacketBE structure """
+def test_simple_struct(good_values): #pylint: disable=redefined-outer-name
+    """ Test the helper functions """
     values = extract_values(good_values)
-    packed = struct.pack(FMT_PACKET_BE, *values)
-    unpacked = struct.unpack(FMT_PACKET_BE, packed)
-    repacked = struct.pack(FMT_PACKET_BE, *unpacked)
 
-    assert packed == repacked
+    packed_be = struct.pack(FMT_PACKET_BE, *values)
+    unpacked_be = struct.unpack(FMT_PACKET_BE, packed_be)
+    repacked_be = struct.pack(FMT_PACKET_BE, *unpacked_be)
 
-def test_struct_le(good_values): #pylint: disable=redefined-outer-name
-    """ Test the helper functions against the PacketLE structure """
-    values = extract_values(good_values)
-    packed = struct.pack(FMT_PACKET_LE, *values)
-    unpacked = struct.unpack(FMT_PACKET_LE, packed)
-    repacked = struct.pack(FMT_PACKET_LE, *unpacked)
+    packed_le = struct.pack(FMT_PACKET_LE, *values)
+    unpacked_le = struct.unpack(FMT_PACKET_LE, packed_le)
+    repacked_le = struct.pack(FMT_PACKET_LE, *unpacked_le)
 
-    assert packed == repacked
+    assert packed_be == repacked_be
+    assert packed_le == repacked_le
 
 # Initializing tests
-def test_init_be(good_values):
-    """ Test initializing PacketLE field values """
-    packet = PacketLE(**good_values)
+def test_init(good_values):
+    """ Test initializing field values """
+    packet_be = PacketBE(**good_values)
+    packet_le = PacketLE(**good_values)
 
-    for key, value in packet.iteritems():
+    for key, value in packet_be.iteritems():
+        assert good_values[key] == value
+    for key, value in packet_le.iteritems():
         assert good_values[key] == value
 
-def test_init_le(good_values):
-    """ Test initializing PacketLE field values """
-    packet = PacketLE(**good_values)
-
-    for key, value in packet.iteritems():
-        assert good_values[key] == value
-
-def test_from_packed_be(good_values):
-    """ Test from_packed() initializing PacketBE field values """
+def test_from_raw(good_values):
+    """ Test from_raw() initializing PacketBE field values """
     values = extract_values(good_values)
-    packed = struct.pack(FMT_PACKET_BE, *values)
-    packet = PacketBE.from_packed(packed)
 
-    for key, value in packet.iteritems():
+    packed_be = struct.pack(FMT_PACKET_BE, *values)
+    packet_be = PacketBE.from_raw(packed_be)
+    packed_le = struct.pack(FMT_PACKET_LE, *values)
+    packet_le = PacketLE.from_raw(packed_le)
+
+    for key, value in packet_be.iteritems():
         assert good_values[key] == value
-
-def test_from_packed_le(good_values):
-    """ Test from_packed() initializing PacketLE field values """
-    values = extract_values(good_values)
-    packed = struct.pack(FMT_PACKET_LE, *values)
-    packet = PacketLE.from_packed(packed)
-
-    for key, value in packet.iteritems():
+    for key, value in packet_le.iteritems():
         assert good_values[key] == value
 
 # Utility tests

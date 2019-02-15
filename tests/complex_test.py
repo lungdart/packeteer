@@ -4,7 +4,7 @@ import struct
 import copy
 import pytest #pylint: disable=unused-import
 from tests.values import good_data #pylint: disable=unused-import
-from packeter import packets, fields
+from packeteer import packets, fields
 
 
 # Packet classes
@@ -17,8 +17,7 @@ class SubPacketBE(packets.BigEndian):
 class SubPacketLE(packets.LittleEndian):
     """ Sub-packet (Little Endian) """
     fields = copy.deepcopy(SubPacketBE.fields)
-
-class PacketBE(packets.BigEndian):
+class Packet(packets.BigEndian):
     """ Complex Packet (Big Endian) """
     fields = [
         fields.Padding(),
@@ -28,9 +27,6 @@ class PacketBE(packets.BigEndian):
         fields.UInt16('size'),
         fields.Raw('data', size='size')
     ]
-class PacketLE(packets.LittleEndian):
-    """ Complex Packet (Little Endian) """
-    fields = copy.deepcopy(PacketBE.fields)
 
 
 # Helper functions
@@ -61,36 +57,19 @@ def pack_params(params, big_endian=True):
 
 ### TESTS ###
 # Initializing tests
-def test_init_be(good_data):
+def test_complex_init(good_data):
     """ Test initializing PacketBE field values """
     params = gen_params(good_data)
-    packet = PacketBE(**params)
+    packet = Packet(**params)
 
     for key, value in packet.iteritems():
         assert params[key] == value
 
-def test_init_le(good_data):
-    """ Test initializing PacketLE field values """
-    params = gen_params(good_data)
-    packet = PacketLE(**params)
-
-    for key, value in packet.iteritems():
-        assert params[key] == value
-
-def test_from_packed_be(good_data):
-    """ Test from_packed() initializing PacketBE field values """
+def test_complex_from_raw(good_data):
+    """ Test from_raw() initializing PacketBE field values """
     params = gen_params(good_data)
     packed = pack_params(params, big_endian=True)
-    packet = PacketBE.from_packed(packed)
-
-    for key, value in packet.iteritems():
-        assert params[key] == value
-
-def test_from_packed_le(good_data):
-    """ Test from_packed() initializing PacketBE field values """
-    params = gen_params(good_data)
-    packed = pack_params(params, big_endian=False)
-    packet = PacketLE.from_packed(packed)
+    packet = Packet.from_raw(packed)
 
     for key, value in packet.iteritems():
         assert params[key] == value

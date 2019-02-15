@@ -1,4 +1,5 @@
 """ Field classes - Classes used to define a packets components """
+#pylint: disable=C0326
 import struct
 
 class BaseField(object):
@@ -8,16 +9,17 @@ class BaseField(object):
     """
     def __init__(self, name, _type, count, default):
         assert _type in 'xcbB?hHiIqQfds_'
+        assert isinstance(count, basestring) or count > 0
 
-        # Private variables
-        self._parent = None
-        self._default_value = default
-        self._value = self._default_value
-        self._count = count
+        # Save parameters
+        self.name     = name
+        self.type     = _type
+        self._count   = count
+        self._default = default
 
-        # Public variables
-        self.name = name
-        self.type = _type
+        # Derive additional values
+        self._value   = None
+        self._parent  = None
 
     @property
     def value(self):
@@ -30,21 +32,30 @@ class BaseField(object):
         # Dynamic sizing. Lookup the value in the parent packet's appropriate
         #  field
         if isinstance(self._count, basestring):
-            return int(self._parent[self._count])
+            if self._parent is not None:
+                return int(self._parent[self._count])
+            return 0
 
         # Static Sizing
         return int(self._count)
 
-    def register(self, packet):
-        """ Register to a packet class, allows for dynamic counts """
-        self._parent = packet
+    def register(self, parent):
+        """ Register to a parent packet class, allows for dynamic counts """
+        self._parent = parent
+        self.reset()
 
     def reset(self):
         """ Reset the internal value to the default """
-        self._value = self._default_value
+        # Update an associated dynamic count field if needed
+        if isinstance(self._count, basestring):
+            self._parent[self._count] = len(self._default)
+        self._value = self._default
 
     def set(self, value):
         """ Set the internal value """
+        # Update an associated dynamic count field if needed
+        if isinstance(self._count, basestring):
+            self._parent[self._count] = len(value)
         self._value = value
 
     def pack(self, big_endian=True):
@@ -99,11 +110,11 @@ class Padding(BaseField):
     def __init__(self, count=1):
         super(Padding, self).__init__('padding', 'x', count, None)
 
-    def pack(self, *args, **kwargs):
+    def pack(self, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
         """ Padding shouldn't pack """
         return b''
 
-    def unpack(self, *args, **kwargs):
+    def unpack(self, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
         """ Padding shouldn't unpack """
         return
 
@@ -200,13 +211,13 @@ class Raw(String):
 
 class Packet(BaseField):
     """ Sub-packet (Variable size) """
-    def __init__(self, name, count=1, default=None):
+    def __init__(self, name, default, count=1):
         super(Packet, self).__init__(name, '_', count, default)
 
-    def pack(self, *args, **kwargs):
+    def pack(self, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
         """ Hack the packet pack itself """
         return self._value.pack()
 
-    def unpack(self, raw, *args, **kwargs):
+    def unpack(self, raw, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
         """ Have the packet unpack the raw data """
         self._value.unpack(raw)
