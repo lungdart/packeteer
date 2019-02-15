@@ -1,8 +1,9 @@
-""" Testing custom packet class creation and usage """
+""" Testing simple packet class creation and usage """
+#pylint: disable=C0326,W0621
 import struct
 import copy
-import pytest
-from values import good_values, set_values
+import pytest #pylint: disable=unused-import
+from tests.values import good_values, set_values #pylint: disable=unused-import
 from packeter import packets, fields
 
 # Expected values and formats
@@ -47,7 +48,7 @@ def extract_values(values):
 
 ### TESTS ###
 # Helper tests
-def test_struct_be(good_values):
+def test_struct_be(good_values): #pylint: disable=redefined-outer-name
     """ Test the helper functions against the PacketBE structure """
     values = extract_values(good_values)
     packed = struct.pack(FMT_PACKET_BE, *values)
@@ -56,7 +57,7 @@ def test_struct_be(good_values):
 
     assert packed == repacked
 
-def test_struct_le(good_values):
+def test_struct_le(good_values): #pylint: disable=redefined-outer-name
     """ Test the helper functions against the PacketLE structure """
     values = extract_values(good_values)
     packed = struct.pack(FMT_PACKET_LE, *values)
@@ -121,7 +122,7 @@ def test_items(set_values):
 
     assert items == packet.items()
 
-def test_size(set_values):
+def test_size():
     """ Test fetching the packet size """
     packet = PacketBE()
     size = packet.size()

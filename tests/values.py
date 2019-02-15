@@ -1,4 +1,5 @@
 """ Tools for making value choices in tests """
+#pylint: disable=C0326
 import random
 import pytest
 

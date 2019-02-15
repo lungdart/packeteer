@@ -99,6 +99,10 @@ class Padding(BaseField):
     def __init__(self, count=1):
         super(Padding, self).__init__('padding', 'x', count, None)
 
+    def pack(self, *args, **kwargs):
+        """ Padding shouldn't pack """
+        return b''
+
     def unpack(self, *args, **kwargs):
         """ Padding shouldn't unpack """
         return
@@ -175,7 +179,7 @@ class String(BaseField):
         value = self._value
 
         # Strings always use a size value, and only store one string
-        fmt = '>' if big_endian else '<' + str(count) + self.type
+        fmt = ('>' if big_endian else '<') + str(count) + self.type
         return struct.pack(fmt, value)
 
     def unpack(self, raw, big_endian=True):
@@ -184,7 +188,7 @@ class String(BaseField):
         count = self.count
 
         # Strings always use a size value, and only store one string
-        fmt = '>' if big_endian else '<' + str(count) + self.type
+        fmt = ('>' if big_endian else '<') + str(count) + 's'
         unpacked = struct.unpack(fmt, raw)[0]
 
         # Strip trailing null bytes for convienence
@@ -192,8 +196,7 @@ class String(BaseField):
 
 class Raw(String):
     """ Raw Data Type (Variable Size) """
-    def __init__(self, name, size, default=b''):
-        super(Raw, self).__init__(name, size, default)
+    pass
 
 class Packet(BaseField):
     """ Sub-packet (Variable size) """

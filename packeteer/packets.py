@@ -96,7 +96,7 @@ class BasePacket(object):
         """ Fetch the packed raw byte string of the packet """
         raw = b''
         for field in self.fields:
-            raw += field.pack(big_endial=self.big_endian)
+            raw += field.pack(big_endian=self.big_endian)
         return raw
 
     def unpack(self, raw):
