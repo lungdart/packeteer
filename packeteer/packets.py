@@ -25,7 +25,7 @@ class BasePacket(object):
             if not isinstance(field, fields.Padding):
                 self._fnames[field.name] = idx
                 self._fidx[parse_idx] = idx
-            parse_idx += 1
+                parse_idx += 1
 
         # Set field values to what's given or their defaults
         self.clear()
@@ -47,7 +47,8 @@ class BasePacket(object):
     def __repr__(self):
         msg = "<Packet: {}>\n".format(self.name)
         for field in self.fields:
-            msg += "  {}: {}\n".format(field.name, field.value)
+            if not isinstance(field, fields.Padding):
+                msg += "  {}: {}\n".format(field.name, field.value)
         msg = msg[:-1]
         return msg
 
@@ -57,6 +58,7 @@ class BasePacket(object):
             try:
                 idx = self._fidx[key]
             except KeyError:
+                print "!!!", key, self._fidx
                 raise IndexError(key)
         # Get field by name
         elif isinstance(key, basestring):

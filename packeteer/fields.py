@@ -21,6 +21,20 @@ class BaseField(object):
         self._value   = None
         self._parent  = None
 
+    def _listify(self, value):
+        """ Transforms a single value into a list of values for multi count """
+        # Get a single item list
+        if isinstance(value, (tuple, list)):
+            listy_value = list(value)
+        else:
+            listy_value = [value]
+
+        # Correct list size, filling in default values when needed
+        remainder = self.count - len(listy_value)
+        listy_value += [self._default for _ in range(remainder)]
+        listy_value = listy_value[:self.count]
+        return listy_value
+
     @property
     def value(self):
         """ Read only value to force set and rest commands """
@@ -46,43 +60,51 @@ class BaseField(object):
 
     def reset(self):
         """ Reset the internal value to the default """
-        # Update an associated dynamic count field if needed
-        if isinstance(self._count, basestring):
-            self._parent[self._count] = len(self._default)
-        self._value = self._default
+        self.set(self._default)
 
     def set(self, value):
         """ Set the internal value """
         # Update an associated dynamic count field if needed
-        if isinstance(self._count, basestring):
-            self._parent[self._count] = len(value)
+        external_count = isinstance(self._count, basestring)
+        if external_count:
+            try:
+                self._parent[self._count] = len(value)
+            except TypeError:
+                self._parent[self._count] = 1
+
+        # Turn the value into a list for external and multi counts
+        multi_count = self.count > 1
+        if external_count or multi_count:
+            value = self._listify(value)
+
+
+        # Set value, rollback if invalid
+        old_value = self._value
         self._value = value
+        try:
+            self.pack()
+        except struct.error:
+            self._value = old_value
+            raise
 
     def pack(self, big_endian=True):
         """ Pack the field value into a raw byte string """
-        # Capture variables now in case they're dynamic
-        count = self.count
-        value = self._value
-
         # Repeating cases use multiple values
         fmt = '>' if big_endian else '<'
-        if count > 1:
-            fmt += str(count) + self.type
-            return struct.pack(fmt, *value)
+        if self.count > 1:
+            fmt += str(self.count) + self.type
+            return struct.pack(fmt, *self._value)
 
         # Non-repeating cases use a single value directly
         fmt += self.type
-        return struct.pack(fmt, value)
+        return struct.pack(fmt, self._value)
 
     def unpack(self, raw, big_endian=True):
         """ Unpack a given value into this fields value store """
-        # Capture variables now in case they're dynamic
-        count = self.count
-
         # Repeating cases store multiple values
         fmt = '>' if big_endian else '<'
-        if count > 1:
-            fmt += str(count) + self.type
+        if self.count > 1:
+            fmt += str(self.count) + self.type
             self._value = list(struct.unpack(fmt, raw))
 
         # Non-repeating cases store a single value directly
@@ -111,8 +133,8 @@ class Padding(BaseField):
         super(Padding, self).__init__('padding', 'x', count, None)
 
     def pack(self, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
-        """ Padding shouldn't pack """
-        return b''
+        """ Padding always packs to 0x00 """
+        return b''.join([b'\x00' for _ in range(self.count)])
 
     def unpack(self, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
         """ Padding shouldn't unpack """
@@ -178,36 +200,40 @@ class Double(BaseField):
     def __init__(self, name, count=1, default=0.0):
         super(Double, self).__init__(name, 'd', count, default)
 
-class String(BaseField):
-    """ String Type (Variable Size) """
+class Raw(BaseField):
+    """ Raw Data Type (Variable Size) """
     def __init__(self, name, size, default=''):
-        super(String, self).__init__(name, 's', size, default)
+        super(Raw, self).__init__(name, 's', size, default)
+
+    def _listify(self, value):
+        """ Raw values are exact length and null byte padded """
+        listy_value = str(value)
+        remainder = self.count - len(value)
+        listy_value += b''.join(['\x00' for _ in range(remainder)])
+        listy_value = listy_value[:self.count]
+        return listy_value
 
     def pack(self, big_endian=True):
-        """ Pack the string into the correct size and endianness """
-        # Capture variables now in case they're dynamic
-        count = self.count
-        value = self._value
-
+        """ Raw data always uses a size value, and packs with null-bytes """
         # Strings always use a size value, and only store one string
-        fmt = ('>' if big_endian else '<') + str(count) + self.type
-        return struct.pack(fmt, value)
+        fmt = ('>' if big_endian else '<') + str(self.count) + self.type
+        return struct.pack(fmt, self._value)
 
     def unpack(self, raw, big_endian=True):
-        """ Unpack raw bytes into the strings value """
-        # Capture variables now in case they're dynamic
-        count = self.count
+        """ Raw data always uses a size value and packs with null bytes """
+        fmt = ('>' if big_endian else '<') + str(self.count) + 's'
+        self._value = struct.unpack(fmt, raw)[0]
 
-        # Strings always use a size value, and only store one string
-        fmt = ('>' if big_endian else '<') + str(count) + 's'
-        unpacked = struct.unpack(fmt, raw)[0]
+class String(Raw):
+    """ String Type (Variable Size) """
+    def _listify(self, value):
+        """ String values are truncated to fit """
+        return str(value)[:self.count]
 
-        # Strip trailing null bytes for convienence
-        self._value = unpacked.rstrip('\x00')
-
-class Raw(String):
-    """ Raw Data Type (Variable Size) """
-    pass
+    def unpack(self, *args, **kwargs):
+        """ Strings don't include the trailing spaces """
+        super(String, self).unpack(*args, **kwargs)
+        self._value = self._value.rstrip('\x00')
 
 class Packet(BaseField):
     """ Sub-packet (Variable size) """

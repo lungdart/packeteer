@@ -24,7 +24,8 @@ class Response(packets.BigEndian):
     ]
 
 if __name__ == '__main__':
-    request = RequestPacket(type=0, size=len(data), data=b'Hello World')
+    data = b'Hello World'
+    request = RequestPacket(type=0, size=len(data), data=data)
     response = ResponsePacket()
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -60,7 +61,7 @@ from packeteer import packets, fields
 class MyPacketBE(packets.BigEndian):
     name = 'Custom (Big Endian)'
     fields = [
-        fields.Bool('OK')
+        fields.Bool('OK'),
         fields.Int32('value', default=42)
     ]
 
@@ -82,7 +83,7 @@ from packeteer import packets, fields
 class MyPacket(packets.BigEndian):
     ''' Custom (Big Endian) '''
     fields = [
-        fields.Bool('OK')
+        fields.Bool('OK'),
         fields.Int32('value', default=42)
     ]
 
@@ -171,8 +172,10 @@ Packeteer comes with the following field types:
 * *fields.UInt32*: (4 Byte) Unsigned Integer
 * *fields.Int64*: (8 Byte) Signed Integer
 * *fields.UInt64*: (8 Byte) Unsigned Integer
-* *fields.String*: (n Bytes) String as a single value
+* *fields.Float*: (4 Byte) Float value
+* *fields.Double* (8 Byte) Float value
 * *fields.Raw*: (n Byte) Raw byte data as a single value
+* *fields.String*: (n Bytes) String as a single value
 
 The majority of the types are self explanatory and work identically to the others, but some like padding, string, and raw behave differently and are looked at further in the following sections
 
@@ -187,7 +190,7 @@ class PaddedPacket(packets.BigEndian):
     ''' Padded '''
     fields = [
         fields.Padding(count=4),
-        fields.UInt8('value')
+        fields.UInt8('value'),
         fields.Padding(count=2)
     ]
 
@@ -229,14 +232,14 @@ class StringPacket(packets.BigEndian):
     ''' String vs Char'''
     fields = [
         fields.Char('chars', count=12),
-        fields.String('string', size=12)
+        fields.String('string', size=12),
         fields.Raw('raw', size=12)
     ]
 
 msg = 'Hello World'
-packet = MyPacket(chars=msg, string=msg, raw=msg)
+packet = StringPacket(string=msg, raw=msg, chars=[x for x in msg].append('\x00'))
 print repr(packet)
-# <Packet: Multi-count>
+# <Packet: String vs Char>
 #   chars: ['H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd', '\x00']
 #   string: 'Hello World'
 #   raw: 'Hello World\x00'
@@ -253,7 +256,7 @@ class CountPacket(packets.BigEndian):
     ''' Multi-count '''
     fields = [fields.Int32('value', count=4)]
 
-packet = MyPacket(value=(42, 33, 1, 999))
+packet = CountPacket(value=(42, 33, 1, 999))
 print repr(packet)
 # <Packet: Multi-count>
 #   value: [42, 33, 1, 999]
@@ -286,7 +289,7 @@ class DataPacket(packets.BigEndian):
     ''' Variable Length Data '''
     fields = [
         fields.UInt8('data_size'),
-        fields.Raw('data', count='data_size')
+        fields.Raw('data', size='data_size')
     ]
 
 results = [True, False, True, False, False]
