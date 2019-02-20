@@ -17,12 +17,10 @@ URL = 'https://github.com/lungdart/packeteer'
 EMAIL = 'dev@lungdart.net'
 AUTHOR = 'lungdart'
 REQUIRES_PYTHON = '>=2.7.0'
-VERSION = '0.1'
+VERSION = '0.2'
 
 # What packages are required for this module to be executed?
-REQUIRED = [
-    # 'requests', 'maya', 'records',
-]
+REQUIRED = ['future', 'six']
 
 # What packages are optional?
 EXTRAS = {
@@ -38,11 +36,13 @@ CLASSIFIERS = [
     'Programming Language :: Python',
     'Programming Language :: Python :: 2',
     'Programming Language :: Python :: 2.7',
+    'Programming Language :: Python :: 3',
+    'Programming Language :: Python :: 3.5',
+    'Programming Language :: Python :: 3.6',
+    'Programming Language :: Python :: 3.7',
     'Programming Language :: Python :: Implementation :: CPython',
-    'Programming Language :: Python :: Implementation :: PyPy',
     'Topic :: System :: Networking',
     'Intended Audience :: Developers',
-    'Development Status :: 3',
 ]
 
 # The rest you shouldn't have to touch too much :)

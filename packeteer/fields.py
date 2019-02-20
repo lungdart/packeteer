@@ -1,6 +1,9 @@
 """ Field classes - Classes used to define a packets components """
 #pylint: disable=C0326
+from __future__ import unicode_literals
 import struct
+from builtins import bytes #pylint: disable=redefined-builtin
+import six
 
 class BaseField(object):
     """
@@ -9,7 +12,8 @@ class BaseField(object):
     """
     def __init__(self, name, _type, count, default):
         assert _type in 'xcbB?hHiIqQfds_'
-        assert isinstance(count, basestring) or count > 0
+        assert isinstance(count, six.string_types) or (
+            isinstance(count, six.integer_types) and count > 0)
 
         # Save parameters
         self.name     = name
@@ -45,7 +49,7 @@ class BaseField(object):
         """ Read only value to force lookup when dynamic """
         # Dynamic sizing. Lookup the value in the parent packet's appropriate
         #  field
-        if isinstance(self._count, basestring):
+        if isinstance(self._count, six.string_types):
             if self._parent is not None:
                 return int(self._parent[self._count])
             return 0
@@ -56,7 +60,6 @@ class BaseField(object):
     def register(self, parent):
         """ Register to a parent packet class, allows for dynamic counts """
         self._parent = parent
-        self.reset()
 
     def reset(self):
         """ Reset the internal value to the default """
@@ -65,7 +68,7 @@ class BaseField(object):
     def set(self, value):
         """ Set the internal value """
         # Update an associated dynamic count field if needed
-        external_count = isinstance(self._count, basestring)
+        external_count = isinstance(self._count, six.string_types)
         if external_count:
             try:
                 self._parent[self._count] = len(value)
@@ -76,7 +79,6 @@ class BaseField(object):
         multi_count = self.count > 1
         if external_count or multi_count:
             value = self._listify(value)
-
 
         # Set value, rollback if invalid
         old_value = self._value
@@ -142,7 +144,7 @@ class Padding(BaseField):
 
 class Char(BaseField):
     """ Character Field Type (1 Byte) """
-    def __init__(self, name, count=1, default='\x00'):
+    def __init__(self, name, count=1, default=b'\x00'):
         super(Char, self).__init__(name, 'c', count, default)
 
 class Bool(BaseField):
@@ -202,21 +204,21 @@ class Double(BaseField):
 
 class Raw(BaseField):
     """ Raw Data Type (Variable Size) """
-    def __init__(self, name, size, default=''):
+    def __init__(self, name, size, default=b''):
         super(Raw, self).__init__(name, 's', size, default)
 
     def _listify(self, value):
-        """ Raw values are exact length and null byte padded """
-        listy_value = str(value)
+        """ Legacy function to ensure raw data is always sized """
+        # Expand/Truncate value to the exact size using null byte padding
+        listy_value = bytes(value)
         remainder = self.count - len(value)
-        listy_value += b''.join(['\x00' for _ in range(remainder)])
+        listy_value += b''.join([b'\x00' for _ in range(remainder)])
         listy_value = listy_value[:self.count]
         return listy_value
 
     def pack(self, big_endian=True):
         """ Raw data always uses a size value, and packs with null-bytes """
-        # Strings always use a size value, and only store one string
-        fmt = ('>' if big_endian else '<') + str(self.count) + self.type
+        fmt = ('>' if big_endian else '<') + str(self.count) + 's'
         return struct.pack(fmt, self._value)
 
     def unpack(self, raw, big_endian=True):
@@ -226,14 +228,30 @@ class Raw(BaseField):
 
 class String(Raw):
     """ String Type (Variable Size) """
-    def _listify(self, value):
-        """ String values are truncated to fit """
-        return str(value)[:self.count]
+    def __init__(self, name, size, default=u'', encoding='utf8'):
+        super(String, self).__init__(name, size, default)
+        self.encoding = encoding
 
-    def unpack(self, *args, **kwargs):
-        """ Strings don't include the trailing spaces """
-        super(String, self).unpack(*args, **kwargs)
-        self._value = self._value.rstrip('\x00')
+    def _listify(self, value):
+        """ Legacy function to ensure unicode strings are always sized """
+        return value[:self.count]
+
+    def set(self, value):
+        """ Set the strings value """
+        super(String, self).set(value)
+
+    def pack(self, big_endian=True):
+        """ Pack internal unicode value into a raw byte string """
+        fmt = ('>' if big_endian else '<') + str(self.count) + 's'
+        raw_value = bytes(self._value, encoding=self.encoding)
+        return struct.pack(fmt, raw_value)
+
+    def unpack(self, raw, big_endian=True):
+        """ Unpack a raw byte string into a unicode value """
+        fmt = ('>' if big_endian else '<') + str(self.count) + 's'
+        raw_value = struct.unpack(fmt, raw)[0]
+        stripped = raw_value.rstrip(b'\x00')
+        self._value = six.text_type(stripped.decode(self.encoding))
 
 class Packet(BaseField):
     """ Sub-packet (Variable size) """

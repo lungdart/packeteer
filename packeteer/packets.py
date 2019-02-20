@@ -1,4 +1,7 @@
 """ Packet base class and common derivatives """
+from __future__ import unicode_literals, print_function
+import copy
+import six
 from packeteer import fields
 
 class BasePacket(object):
@@ -16,20 +19,23 @@ class BasePacket(object):
         elif not hasattr(self, 'name'):
             self.name = 'Unknown Packet'
 
-        # Register fields and create lookup tables
+        # Prevent sharing field instances by creating unique copies
+        self.fields = copy.deepcopy(self.fields)
+
+        # Register fields and create lookup tables that ignore padding
         self._fnames = {}
         self._fidx = {}
-        parse_idx = 0
+        sparse_idx = 0
         for idx, field in enumerate(self.fields):
             field.register(self)
             if not isinstance(field, fields.Padding):
                 self._fnames[field.name] = idx
-                self._fidx[parse_idx] = idx
-                parse_idx += 1
+                self._fidx[sparse_idx] = idx
+                sparse_idx += 1
 
         # Set field values to what's given or their defaults
         self.clear()
-        for name, value in kwargs.iteritems():
+        for name, value in six.iteritems(kwargs):
             idx = self._fnames[name]
             field = self.fields[idx]
             field.set(value)
@@ -41,8 +47,11 @@ class BasePacket(object):
         instance.unpack(packed)
         return instance
 
-    def __str__(self):
+    def __bytes__(self):
         return self.pack()
+
+    def __str__(self):
+        return str(self.pack().decode('utf8'))
 
     def __repr__(self):
         msg = "<Packet: {}>\n".format(self.name)
@@ -54,14 +63,13 @@ class BasePacket(object):
 
     def __getitem__(self, key):
         # Get field by index
-        if isinstance(key, int):
+        if isinstance(key, six.integer_types):
             try:
                 idx = self._fidx[key]
             except KeyError:
-                print "!!!", key, self._fidx
                 raise IndexError(key)
         # Get field by name
-        elif isinstance(key, basestring):
+        elif isinstance(key, six.string_types):
             idx = self._fnames[key]
         # Other accessors not supported
         else:
@@ -72,13 +80,13 @@ class BasePacket(object):
 
     def __setitem__(self, key, value):
         # Get field by index
-        if isinstance(key, int):
+        if isinstance(key, six.integer_types):
             try:
                 idx = self._fidx[key]
             except KeyError:
                 raise IndexError(key)
         # Get field by name
-        elif isinstance(key, basestring):
+        elif isinstance(key, six.string_types):
             idx = self._fnames[key]
         # Other accessors not supported
         else:
@@ -135,14 +143,20 @@ class BasePacket(object):
     def hex_dump(self):
         """ Print a human readable hex dump of the packet data """
         raw = self.pack()
-        for byte, idx in enumerate(raw):
-            line = ""
+        dump = ''
+        for idx, byte in enumerate(bytearray(raw)):
+            # Prepend the line with an address
             if (idx % 16) == 0:
-                line = "{:04x}".format(idx)
+                dump += "{:04x}".format(idx)
+            # Visual pleasing space in the middle of 16 bytes
             elif (idx % 8) == 0:
-                line += " "
-            line += " {:02x}".format(byte)
-            print line
+                dump += ' '
+            # Add bytes
+            dump += " {:02x}".format(byte)
+            # End with a new line if we're not finished
+            if (idx % 16) == 15 and idx != len(raw)-1:
+                dump += '\n'
+        return dump
 
     def keys(self):
         """ Fetch a list of the field names """

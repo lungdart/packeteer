@@ -34,7 +34,7 @@ if __name__ == '__main__':
         raw = s.recv(response.size())
         response.unpack(raw)
 
-    print repr(response)
+    print(repr(response))
 
 # <Packet: Response packet>
 #   success: True
@@ -43,12 +43,27 @@ if __name__ == '__main__':
 
 
 ## Installation
+**Packeteer** is available on PyPi, and can be installed with pip directly
 ```sh
 $ pip install packeteer
 ```
 
 ## Requirements
-Packeteer was developed for Python 2.7, and was not tested against other versions. Python 3 support planned in the future.
+### Operating systems
+**Packeteer** has no OS dependencies, and should be compatible wherever python can run; However, it is only verified for Ubuntu 18.04. If you discover any issues in other environments, please open a new issue or submit a pull request.
+
+### Python
+**Packeteer** was developed and tested against python 2.7, 3.5, 3.6, and 3.7.
+
+### Dependencies
+**Packeteer** depends on the following packages:
+* future
+* six
+
+For development and testing, these optional dependencies are also required:
+* pytest
+* pytest-cov
+* tox
 
 ## Documentation
 ### Defining packets
@@ -88,7 +103,7 @@ class MyPacket(packets.BigEndian):
     ]
 
 packet = MyPacket()
-print repr(packet)
+print(repr(packet))
 # <Packet: Custom (Big Endian)>
 #   OK: False
 #   value: 42
@@ -97,13 +112,13 @@ print repr(packet)
 Packets can also be constructed with non-default values by using the field names to set values
 ```python
 packet = MyPacket(OK=True)
-print repr(packet)
+print(repr(packet))
 # <Packet: Custom (Big Endian)>
 #   OK: True
 #   value: 42
 
 packet2 = MyPacket(value=100)
-print repr(packet2)
+print(repr(packet2))
 # <Packet: Custom (Big Endian)>
 #   OK: False
 #   value: 100
@@ -113,10 +128,10 @@ print repr(packet2)
 Field values can be accessed like a list (By index) or like a dictionary (By key)
 ```python
 packet = MyPacket()
-print packet[0], packet[1]
+print(packet[0], packet[1])
 # False 42
 
-print packet['OK'], packet['value']
+print(packet['OK'], packet['value'])
 # False 42
 ```
 
@@ -126,7 +141,7 @@ packet = MyPacket()
 packet[0] = True
 packet[1] = 100
 
-print packet['OK'], packet['value']
+print(packet['OK'], packet['value'])
 # True 100
 ```
 
@@ -138,20 +153,20 @@ packet = MyPacket()
 
 raw = b'\x01\x00\x00\x00\xFF'
 packet.unpack(raw)
-print repr(packet)
+print(repr(packet))
 # <Packet: Custom (Big Endian)>
 #   OK: True
 #   value: 255
 
 raw2 = packet.pack()
-print raw == raw2
+print(raw == raw2)
 # True
 ```
 
 Packet instances can be constructed directly from bytes as well using the from_raw() call
 ```python
 packet = MyPacket.from_raw(b'\x01\x00\x00\x00\xFF')
-print repr(packet)
+print(repr(packet))
 # <Packet: Custom (Big Endian)>
 #   OK: True
 #   value: 255
@@ -175,7 +190,7 @@ Packeteer comes with the following field types:
 * *fields.Float*: (4 Byte) Float value
 * *fields.Double* (8 Byte) Float value
 * *fields.Raw*: (n Byte) Raw byte data as a single value
-* *fields.String*: (n Bytes) String as a single value
+* *fields.String*: (n Bytes) Unicode String as a single value
 
 The majority of the types are self explanatory and work identically to the others, but some like padding, string, and raw behave differently and are looked at further in the following sections
 
@@ -195,55 +210,68 @@ class PaddedPacket(packets.BigEndian):
     ]
 
 packet = PaddedPacket(value=255)
-print repr(packet)
+print(repr(packet))
 # <Packet: Padded>
 #   value: 255
 
-print packet[0]
+print(packet[0])
 # 255
 
-print packet[1]
+print(packet[1])
 # IndexError
 
 
 raw = packet.pack()
-print repr(raw)
+print(repr(raw))
 # '\x00\x00\x00\x00\xFF\x00\x00'
 
 packet.unpack(b'\x00\x00\x00\x00\x7F\x00\x00')
-print repr(packet)
+print(repr(packet))
 # <Packet: Padded>
 #   value: 127
 ```
 
-#### Strings and Raw data
-*fields.String* behaves like a multi-count *field.Char* with some small differences
-* There is no count argument, but a new size argument
-* The value is stored as a single string, not a list of characters
-* The value is stripped of all padding when unpacked
-
-*fields.Raw* behaves like *fields.String* without the stripping of the null byte padding when unpacked. Raw is mostly to show the desired effect in your code. *field.String* could be used everywhere, but using *field.Raw* helps tell future developers the purpose for this field is raw data, not an actual string to be read.
-
-
+#### Raw data and strings
+*fields.Raw* behaves like a multi-count *field.Char* with some small differences
+* There is no count argument, size argument indicating the size of the data
+* The value is stored as a single byte string, not a list of characters
 ```python
 from packeteer import packets, fields
 
-class StringPacket(packets.BigEndian):
-    ''' String vs Char'''
+class RawPacket(packets.BigEndian):
+    ''' Raw vs Char'''
     fields = [
         fields.Char('chars', count=12),
-        fields.String('string', size=12),
         fields.Raw('raw', size=12)
     ]
 
 msg = 'Hello World'
-packet = StringPacket(string=msg, raw=msg, chars=[x for x in msg].append('\x00'))
-print repr(packet)
+packet = StringPacket(chars=[x for x in msg], raw=msg)
+print(repr(packet))
 # <Packet: String vs Char>
 #   chars: ['H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd', '\x00']
-#   string: 'Hello World'
-#   raw: 'Hello World\x00'
+#   raw: b'Hello World\x00'
 ```
+
+*fields.String* is an extension of *fields.Raw* that stores it's internal value as a unicode string with the encoding of your choosing (Defaults to utf8). The internal value has any trailing null byte padding removed until it is serialized.
+```python
+from packeteer import packets, fields
+
+class StringPacket(packets.BigEndian):
+    ''' String vs Raw'''
+    fields = [
+        fields.Raw('raw', count=12),
+        fields.String('string', size=12, encoding='utf8')
+    ]
+
+msg = 'Hello World'
+packet = StringPacket(raw=msg, string=msg)
+print(repr(packet))
+# <Packet: String vs Raw>
+#   raw: b'Hello World\x00'
+#   string: u'Hello World'
+```
+
 
 
 #### Multi-count fields
@@ -257,17 +285,17 @@ class CountPacket(packets.BigEndian):
     fields = [fields.Int32('value', count=4)]
 
 packet = CountPacket(value=(42, 33, 1, 999))
-print repr(packet)
+print(repr(packet))
 # <Packet: Multi-count>
 #   value: [42, 33, 1, 999]
 
 packet['value'] = [0, 0, 0, 0]
-print repr(packet)
+print(repr(packet))
 # <Packet: Multi-count>
 #   value: [0, 0, 0, 0]
 
 packet['value'][2] = 42
-print repr(packet)
+print(repr(packet))
 # <Packet: Multi-count>
 #   value: [0, 0, 42, 0]
 ```
@@ -294,20 +322,20 @@ class DataPacket(packets.BigEndian):
 
 results = [True, False, True, False, False]
 packet1 = ListPacket(results=results)
-print repr(packet1)
+print(repr(packet1))
 # <Packet: Result List>
 #   result_count: 5
 #   results: [True, False, True, False, False]
 
 packet1['results'] = [False, False]
-print repr(packet1)
+print(repr(packet1))
 # <Packet: Result List>
 #   result_count: 2
 #   results: [False, False]
 
-data = b''.join([chr(x) for x in range(8)])
+data = b''.join([bytes([x]) for x in range(8)])
 packet2 = DataPacket(data=data)
-print repr(packet2)
+print(repr(packet2))
 # <Packet: Variable Length Data>
 #   data_size: 8
 #   data: b'\x00\x01\x02\x03\x04\x05\x06\x07'

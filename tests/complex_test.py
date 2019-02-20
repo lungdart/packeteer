@@ -11,8 +11,8 @@ from packeteer import packets, fields
 class SubPacketBE(packets.BigEndian):
     """ Sub-packet (Big Endian) """
     fields = [
-        fields.Int64('int64'),
-        fields.UInt64('uint64')
+        fields.Int64(u'int64'),
+        fields.UInt64(u'uint64')
     ]
 class SubPacketLE(packets.LittleEndian):
     """ Sub-packet (Little Endian) """
@@ -21,11 +21,11 @@ class Packet(packets.BigEndian):
     """ Complex Packet (Big Endian) """
     fields = [
         fields.Padding(),
-        fields.Packet('be', default=SubPacketBE()),
-        fields.UInt8('multi', count=2),
-        fields.Packet('le', default=SubPacketLE()),
-        fields.UInt16('size'),
-        fields.Raw('data', size='size')
+        fields.Packet(u'be', default=SubPacketBE()),
+        fields.UInt8(u'multi', count=2),
+        fields.Packet(u'le', default=SubPacketLE()),
+        fields.UInt16(u'size'),
+        fields.Raw(u'data', size=u'size')
     ]
 
 
@@ -33,25 +33,25 @@ class Packet(packets.BigEndian):
 def gen_params(good_data):
     """ Generate complex packet initializer values """
     return {
-        'be': SubPacketBE(int64=0x7eaddeaddeaddead, uint64=0xdeaddeaddeaddead),
-        'multi': [0xde, 0xad],
-        'le': SubPacketLE(int64=0x7eaddeaddeaddead, uint64=0xdeaddeaddeaddead),
-        'size': len(good_data),
-        'data': good_data
+        u'be': SubPacketBE(int64=0x7eaddeaddeaddead, uint64=0xdeaddeaddeaddead),
+        u'multi': [0xde, 0xad],
+        u'le': SubPacketLE(int64=0x7eaddeaddeaddead, uint64=0xdeaddeaddeaddead),
+        u'size': len(good_data),
+        u'data': good_data
     }
 
 def pack_params(params, big_endian=True):
     """ Pack complex packet parameters independently """
-    endian = '>' if big_endian else '<'
-    packed = struct.pack('{}x'.format(endian))
-    packed += struct.pack(">qQ",
-                          params['be']['int64'], params['be']['uint64'])
-    packed += struct.pack("{}2B".format(endian),
-                          params['multi'][0], params['multi'][1])
-    packed += struct.pack("<qQ",
-                          params['le']['int64'], params['le']['uint64'])
-    packed += struct.pack("{}H{}s".format(endian, params['size']),
-                          params['size'], params['data'])
+    endian = u'>' if big_endian else u'<'
+    packed = struct.pack(u'{}x'.format(endian))
+    packed += struct.pack(u'>qQ',
+                          params[u'be'][u'int64'], params[u'be'][u'uint64'])
+    packed += struct.pack(u'{}2B'.format(endian),
+                          params[u'multi'][0], params[u'multi'][1])
+    packed += struct.pack(u'<qQ',
+                          params[u'le'][u'int64'], params[u'le'][u'uint64'])
+    packed += struct.pack(u'{}H{}s'.format(endian, params[u'size']),
+                          params[u'size'], params[u'data'])
 
     return packed
 
