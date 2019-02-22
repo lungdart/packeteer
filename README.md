@@ -1,4 +1,6 @@
 # Packeteer: The packet serializer
+[![Build Status](https://travis-ci.com/lungdart/packeteer.svg?branch=master)](https://travis-ci.com/lungdart/packeteer)
+
 **Packeteer** is a light-weight packet serializer capable of translating between raw bytes and custom packet objects; Objects which are easier to understand, display, and work with
 
 ```python
