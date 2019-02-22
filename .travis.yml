@@ -3,16 +3,17 @@ python:
   - "2.7"
   - "3.5"
   - "3.6"
+# Python 3.7 support for Travis-CI is spotty, this hacks it in
 matrix:
   include:
     - python: 3.7
       dist: xenial
       sudo: true
 install:
-  pip install -r requirements.txt
-  pip install pytest
-  pip install pytest-cov
-  pip install coveralls
+  - pip install -r requirements.txt
+  - pip install pytest
+  - pip install pytest-cov
+  - pip install coveralls
 script:
   - pytest --cov=packeteer
 after_success:
