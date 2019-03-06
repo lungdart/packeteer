@@ -59,3 +59,22 @@ def test_big_set(values):
     raw2 = packet2.pack()
     assert packet1 == packet2
     assert raw1 == raw2
+
+def test_partial_unbroken(values):
+    """ Test unpacking from partial values with no partial field values """
+    full_packet = BigPacket(**values)
+    full_raw = full_packet.pack()
+    partial_raw = full_raw[:5]
+    partial_packet = BigPacket.from_raw(partial_raw, partial=True)
+    assert partial_packet['int16'] == full_packet['int16']
+    assert partial_packet['int32'] == 0
+
+def test_partial_broken(values):
+    """ Test unpacking from partial values WITH partial field values """
+    full_packet = BigPacket(**values)
+    full_raw = full_packet.pack()
+    partial_raw = full_raw[:6]
+    partial_packet = BigPacket.from_raw(partial_raw, partial=True)
+    assert partial_packet['int16'] == full_packet['int16']
+    assert partial_packet['int32'] != full_packet['int32']
+    assert partial_packet['int64'] == 0

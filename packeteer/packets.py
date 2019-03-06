@@ -41,10 +41,10 @@ class BasePacket(object):
             field.set(value)
 
     @classmethod
-    def from_raw(cls, packed):
+    def from_raw(cls, packed, partial=False):
         """ Initialize a new packet from the raw bytes """
         instance = cls()
-        instance.unpack(packed)
+        instance.unpack(packed, partial)
         return instance
 
     def __bytes__(self):
@@ -119,12 +119,15 @@ class BasePacket(object):
             raw += field.pack(big_endian=self.big_endian)
         return raw
 
-    def unpack(self, raw):
+    def unpack(self, raw, partial=False):
         """ Unpack a raw byte string into this packets fields """
         start = 0
         for field in self.fields:
             end = start + field.size()
             part = raw[start:end]
+            # Stop early when the the raw data falls short of unpacking the field
+            if partial and len(part) < field.size():
+                break
             field.unpack(part, big_endian=self.big_endian)
             start = end
 
