@@ -22,19 +22,18 @@ class BasePacket(object):
         # Prevent sharing field instances by creating unique copies
         self.fields = copy.deepcopy(self.fields)
 
-        # Register fields and create lookup tables that ignore padding
+        # Create a lookup table of all non padding fields
         self._fnames = {}
         self._fidx = {}
         sparse_idx = 0
         for idx, field in enumerate(self.fields):
-            field.register(self)
+            field._register(self) #pylint: disable=protected-access
             if not isinstance(field, fields.Padding):
                 self._fnames[field.name] = idx
                 self._fidx[sparse_idx] = idx
                 sparse_idx += 1
 
         # Set field values to what's given or their defaults
-        self.clear()
         for name, value in six.iteritems(kwargs):
             idx = self._fnames[name]
             field = self.fields[idx]
@@ -73,7 +72,7 @@ class BasePacket(object):
             idx = self._fnames[key]
         # Other accessors not supported
         else:
-            raise KeyError(key)
+            raise TypeError(key)
         # Return value
         field = self.fields[idx]
         return field.value
@@ -90,13 +89,16 @@ class BasePacket(object):
             idx = self._fnames[key]
         # Other accessors not supported
         else:
-            raise KeyError(key)
+            raise TypeError(key)
         # Set Value
         field = self.fields[idx]
-        field.set(value)
+        try:
+            field.set(value)
+        except Exception as error:
+            raise TypeError('Bad value: {}'.format(str(error)))
 
     def __iter__(self):
-        return self.fields.__iter__()
+        return self.values().__iter__()
 
     def __eq__(self, rhs):
         if self.__class__ == rhs.__class__:

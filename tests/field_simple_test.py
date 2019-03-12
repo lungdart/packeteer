@@ -4,38 +4,32 @@ from __future__ import unicode_literals
 import struct
 import copy
 import pytest #pylint: disable=unused-import
-from tests.values import good_values, set_values #pylint: disable=unused-import
+from tests.values.simple import good_values, set_values #pylint: disable=unused-import
 from packeteer import packets, fields
 
 # Expected values and formats
 KEYS_PACKET   = [u'char', u'bool',
                  u'int8', u'int16', u'int32', u'int64',
-                 u'uint8', u'uint16', u'uint32', u'uint64',
-                 u'raw']
-FMT_PACKET    = '{e}xxxxxc?xbhiqxBHIQx256s'
+                 u'uint8', u'uint16', u'uint32', u'uint64']
+FMT_PACKET    = '{e}c?bhiqBHIQ'
 FMT_PACKET_BE = FMT_PACKET.format(e='>')
 FMT_PACKET_LE = FMT_PACKET.format(e='<')
-SIZE_PACKET   = 296
+SIZE_PACKET   = 32
 
 # Custom packet classes
 class PacketBE(packets.BigEndian):
     """ Simple Packet (Big Endian) """
     fields = [
-        fields.Padding(count=5),
         fields.Char('char'),
         fields.Bool('bool'),
-        fields.Padding(),
         fields.Int8('int8'),
         fields.Int16('int16'),
         fields.Int32('int32'),
         fields.Int64('int64'),
-        fields.Padding(),
         fields.UInt8('uint8'),
         fields.UInt16('uint16'),
         fields.UInt32('uint32'),
         fields.UInt64('uint64'),
-        fields.Padding(),
-        fields.Raw('raw', size=256),
     ]
 class PacketLE(packets.LittleEndian):
     """ Simple Packet (Little Endian) """

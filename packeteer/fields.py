@@ -2,63 +2,34 @@
 #pylint: disable=C0326
 from __future__ import unicode_literals
 import struct
+import copy
 from builtins import bytes #pylint: disable=redefined-builtin
 import six
 
-class BaseField(object):
+class Field(object):
     """
     Field Base class
     Do not derive from this class, but use the pre-existing type classes instead
     """
-    def __init__(self, name, _type, count, default):
-        assert _type in 'xcbB?hHiIqQfds_'
-        assert isinstance(count, six.string_types) or (
-            isinstance(count, six.integer_types) and count > 0)
+    def __init__(self, name=None, _type=None, default=None):
+        if _type is not None:
+            assert _type in 'xcbB?hHiIqQfds'
 
         # Save parameters
         self.name     = name
         self.type     = _type
-        self._count   = count
         self._default = default
-
-        # Derive additional values
-        self._value   = None
         self._parent  = None
-
-    def _listify(self, value):
-        """ Transforms a single value into a list of values for multi count """
-        # Get a single item list
-        if isinstance(value, (tuple, list)):
-            listy_value = list(value)
-        else:
-            listy_value = [value]
-
-        # Correct list size, filling in default values when needed
-        remainder = self.count - len(listy_value)
-        listy_value += [self._default for _ in range(remainder)]
-        listy_value = listy_value[:self.count]
-        return listy_value
+        self._value   = None
+        self.reset()
 
     @property
     def value(self):
         """ Read only value to force set and rest commands """
         return self._value
 
-    @property
-    def count(self):
-        """ Read only value to force lookup when dynamic """
-        # Dynamic sizing. Lookup the value in the parent packet's appropriate
-        #  field
-        if isinstance(self._count, six.string_types):
-            if self._parent is not None:
-                return int(self._parent[self._count])
-            return 0
-
-        # Static Sizing
-        return int(self._count)
-
-    def register(self, parent):
-        """ Register to a parent packet class, allows for dynamic counts """
+    def _register(self, parent):
+        """ Register the parent packet as owning this field """
         self._parent = parent
 
     def reset(self):
@@ -67,19 +38,6 @@ class BaseField(object):
 
     def set(self, value):
         """ Set the internal value """
-        # Update an associated dynamic count field if needed
-        external_count = isinstance(self._count, six.string_types)
-        if external_count:
-            try:
-                self._parent[self._count] = len(value)
-            except TypeError:
-                self._parent[self._count] = 1
-
-        # Turn the value into a list for external and multi counts
-        multi_count = self.count > 1
-        if external_count or multi_count:
-            value = self._listify(value)
-
         # Set value, rollback if invalid
         old_value = self._value
         self._value = value
@@ -91,177 +49,300 @@ class BaseField(object):
 
     def pack(self, big_endian=True):
         """ Pack the field value into a raw byte string """
-        # Repeating cases use multiple values
-        fmt = '>' if big_endian else '<'
-        if self.count > 1:
-            fmt += str(self.count) + self.type
-            return struct.pack(fmt, *self._value)
-
-        # Non-repeating cases use a single value directly
-        fmt += self.type
+        if self.type is None:
+            raise RuntimeError("Invalid field type {}".format(self.type))
+        fmt = ('>' if big_endian else '<') + self.type
         return struct.pack(fmt, self._value)
 
     def unpack(self, raw, big_endian=True):
         """ Unpack a given value into this fields value store """
-        # Repeating cases store multiple values
-        fmt = '>' if big_endian else '<'
-        if self.count > 1:
-            fmt += str(self.count) + self.type
-            self._value = list(struct.unpack(fmt, raw))
-
-        # Non-repeating cases store a single value directly
-        else:
-            fmt += self.type
-            self._value = struct.unpack(fmt, raw)[0]
+        if self.type is None:
+            raise RuntimeError("Invalid field type {}".format(self.type))
+        fmt = ('>' if big_endian else '<') + self.type
+        self._value = struct.unpack(fmt, raw)[0]
 
     def size(self):
         """ Fetch the size of this field """
         if self.type in 'xcbB?s':
-            return self.count
+            return 1
         elif self.type in 'hH':
-            return 2 * self.count
+            return 2
         elif self.type in 'iIf':
-            return 4 * self.count
+            return 4
         elif self.type in 'qQd':
-            return 8 * self.count
-        elif self.type == '_':
-            return self._value.size()
+            return 8
         else:
             raise RuntimeError("Invalid field type {}".format(self.type))
 
-class Padding(BaseField):
+class SizedField(Field):
+    """ Variable sized field """
+    def __init__(self, size=None, **kwargs):
+        self._size = size
+        super(SizedField, self).__init__(**kwargs)
+
+    def size(self):
+        """ Fetch the size of the field """
+        if self._size is None:
+            return len(self._value)
+        if isinstance(self._size, six.string_types) and self._parent is not None:
+            return int(self._parent[self._size])
+        if isinstance(self._size, six.string_types) and self._parent is None:
+            return 0
+        return self._size
+
+    def _size_val(self, value): #pylint: disable=no-self-use
+        """ Override this to handle value sizing when set """
+        return value
+
+    def set(self, value):
+        """ Set the internal value """
+        # Size the value correctly, and assure any dynamic sizing references
+        # are updated
+        sized_value = self._size_val(value)
+        if isinstance(self._size, six.string_types) and self._parent is not None:
+            self._parent[self._size] = len(sized_value)
+        # Set the value normally
+        super(SizedField, self).set(sized_value)
+
+# Standard type fields
+class Char(Field):
+    """ Character Field Type (1 Byte) """
+    def __init__(self, name=None, default=b'\x00', **kwargs):
+        super(Char, self).__init__(name=name, _type='c', default=default, **kwargs)
+
+class Bool(Field):
+    """ Boolean Field Type (1 Byte) """
+    def __init__(self, name=None, default=False, **kwargs):
+        super(Bool, self).__init__(name=name, _type='?', default=default, **kwargs)
+
+class Int8(Field):
+    """ Signed Integer Type (1 Byte) """
+    def __init__(self, name=None, default=0, **kwargs):
+        super(Int8, self).__init__(name=name, _type='b', default=default, **kwargs)
+
+class UInt8(Field):
+    """ Unsigned Integer Type (1 Byte) """
+    def __init__(self, name=None, default=0, **kwargs):
+        super(UInt8, self).__init__(name=name, _type='B', default=default, **kwargs)
+
+class Int16(Field):
+    """ Signed Integer Type (2 Bytes) """
+    def __init__(self, name=None, default=0, **kwargs):
+        super(Int16, self).__init__(name=name, _type='h', default=default, **kwargs)
+
+class UInt16(Field):
+    """ Unsigned Integer Type (2 Bytes) """
+    def __init__(self, name=None, default=0, **kwargs):
+        super(UInt16, self).__init__(name=name, _type='H', default=default, **kwargs)
+
+class Int32(Field):
+    """ Signed Integer Type (4 Bytes) """
+    def __init__(self, name=None, default=0, **kwargs):
+        super(Int32, self).__init__(name=name, _type='i', default=default, **kwargs)
+
+class UInt32(Field):
+    """ Unsigned Integer Type (4 Bytes) """
+    def __init__(self, name=None, default=0, **kwargs):
+        super(UInt32, self).__init__(name=name, _type='I', default=default, **kwargs)
+
+class Int64(Field):
+    """ Signed Integer Type (8 Bytes) """
+    def __init__(self, name=None, default=0, **kwargs):
+        super(Int64, self).__init__(name=name, _type='q', default=default, **kwargs)
+
+class UInt64(Field):
+    """ Unsigned Integer Type (8 Bytes) """
+    def __init__(self, name=None, default=0, **kwargs):
+        super(UInt64, self).__init__(name=name, _type='Q', default=default, **kwargs)
+
+class Float(Field):
+    """ Float Type (4 Bytes) """
+    def __init__(self, name=None, default=0.0, **kwargs):
+        super(Float, self).__init__(name=name, _type='f', default=default, **kwargs)
+
+class Double(Field):
+    """ Double Type (8 Bytes) """
+    def __init__(self, name=None, default=0.0, **kwargs):
+        super(Double, self).__init__(name=name, _type='d', default=default, **kwargs)
+
+# Specialty fields
+class Padding(Field):
     """ Padding Field Type (1 Byte) """
-    def __init__(self, count=1):
-        super(Padding, self).__init__('padding', 'x', count, None)
+    def __init__(self, default=b'\x00', **kwargs):
+        super(Padding, self).__init__(_type='x', default=default, **kwargs)
 
     def pack(self, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
         """ Padding always packs to 0x00 """
-        return b''.join([b'\x00' for _ in range(self.count)])
+        return self._default
 
     def unpack(self, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
         """ Padding shouldn't unpack """
         return
 
-class Char(BaseField):
-    """ Character Field Type (1 Byte) """
-    def __init__(self, name, count=1, default=b'\x00'):
-        super(Char, self).__init__(name, 'c', count, default)
+class Packet(Field):
+    """ Sub-packet (Variable size) """
+    def __init__(self, name=None, default=None):
+        super(Packet, self).__init__(name=name, default=default)
 
-class Bool(BaseField):
-    """ Boolean Field Type (1 Byte) """
-    def __init__(self, name, count=1, default=False):
-        super(Bool, self).__init__(name, '?', count, default)
+    def size(self):
+        """ Use the size of the underlying packet(s) """
+        return self._value.size()
 
-class Int8(BaseField):
-    """ Signed Integer Type (1 Byte) """
-    def __init__(self, name, count=1, default=0):
-        super(Int8, self).__init__(name, 'b', count, default)
+    def pack(self, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
+        """ Have the packet(s) pack itself """
+        if self._value is not None:
+            return self._value.pack()
+        return b''
 
-class UInt8(BaseField):
-    """ Unsigned Integer Type (1 Byte) """
-    def __init__(self, name, count=1, default=0):
-        super(UInt8, self).__init__(name, 'B', count, default)
+    def unpack(self, raw, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
+        """ Have the packet unpack the raw data """
+        self._value.unpack(raw)
 
-class Int16(BaseField):
-    """ Signed Integer Type (2 Bytes) """
-    def __init__(self, name, count=1, default=0):
-        super(Int16, self).__init__(name, 'h', count, default)
-
-class UInt16(BaseField):
-    """ Unsigned Integer Type (2 Bytes) """
-    def __init__(self, name, count=1, default=0):
-        super(UInt16, self).__init__(name, 'H', count, default)
-
-class Int32(BaseField):
-    """ Signed Integer Type (4 Bytes) """
-    def __init__(self, name, count=1, default=0):
-        super(Int32, self).__init__(name, 'i', count, default)
-
-class UInt32(BaseField):
-    """ Unsigned Integer Type (4 Bytes) """
-    def __init__(self, name, count=1, default=0):
-        super(UInt32, self).__init__(name, 'I', count, default)
-
-class Int64(BaseField):
-    """ Signed Integer Type (8 Bytes) """
-    def __init__(self, name, count=1, default=0):
-        super(Int64, self).__init__(name, 'q', count, default)
-
-class UInt64(BaseField):
-    """ Unsigned Integer Type (8 Bytes) """
-    def __init__(self, name, count=1, default=0):
-        super(UInt64, self).__init__(name, 'Q', count, default)
-
-class Float(BaseField):
-    """ Float Type (4 Bytes) """
-    def __init__(self, name, count=1, default=0.0):
-        super(Float, self).__init__(name, 'f', count, default)
-
-class Double(BaseField):
-    """ Double Type (8 Bytes) """
-    def __init__(self, name, count=1, default=0.0):
-        super(Double, self).__init__(name, 'd', count, default)
-
-class Raw(BaseField):
+class Raw(SizedField):
     """ Raw Data Type (Variable Size) """
-    def __init__(self, name, size, default=b''):
-        super(Raw, self).__init__(name, 's', size, default)
+    def __init__(self, name=None, default=b'', **kwargs):
+        super(Raw, self).__init__(name=name, _type='s', default=default, **kwargs)
 
-    def _listify(self, value):
-        """ Legacy function to ensure raw data is always sized """
-        # Expand/Truncate value to the exact size using null byte padding
-        listy_value = bytes(value)
-        remainder = self.count - len(value)
-        listy_value += b''.join([b'\x00' for _ in range(remainder)])
-        listy_value = listy_value[:self.count]
-        return listy_value
+    def _size_val(self, value):
+        """ Modify value to the exact size, padding with null bytes when needed """
+        # Only size the value to fit with static sizing
+        if isinstance(self._size, six.integer_types):
+            size = self.size()
+            remainder = size - len(value)
+            for _ in range(remainder):
+                value += b'\x00'
+            value = value[:size]
+        return value
 
     def pack(self, big_endian=True):
         """ Raw data always uses a size value, and packs with null-bytes """
-        fmt = ('>' if big_endian else '<') + str(self.count) + 's'
+        fmt = ('>' if big_endian else '<') + str(self.size()) + 's'
         return struct.pack(fmt, self._value)
 
     def unpack(self, raw, big_endian=True):
         """ Raw data always uses a size value and packs with null bytes """
-        fmt = ('>' if big_endian else '<') + str(self.count) + 's'
+        fmt = ('>' if big_endian else '<') + str(self.size()) + 's'
         self._value = struct.unpack(fmt, raw)[0]
 
-class String(Raw):
+class String(SizedField):
     """ String Type (Variable Size) """
-    def __init__(self, name, size, default=u'', encoding='utf8'):
-        super(String, self).__init__(name, size, default)
+    def __init__(self, name=None, default=u'', encoding='utf8', **kwargs):
         self.encoding = encoding
+        super(String, self).__init__(name=name, default=default, **kwargs)
 
-    def _listify(self, value):
-        """ Legacy function to ensure unicode strings are always sized """
-        return value[:self.count]
-
-    def set(self, value):
-        """ Set the strings value """
-        super(String, self).set(value)
+    def _size_val(self, value):
+        """ Modify value to the fit within the size """
+        # Only size the value if a static size is given
+        if isinstance(self._size, six.integer_types):
+            return value[:self.size()]
+        return value
 
     def pack(self, big_endian=True):
         """ Pack internal unicode value into a raw byte string """
-        fmt = ('>' if big_endian else '<') + str(self.count) + 's'
+        fmt = ('>' if big_endian else '<') + str(self.size()) + 's'
         raw_value = bytes(self._value, encoding=self.encoding)
         return struct.pack(fmt, raw_value)
 
     def unpack(self, raw, big_endian=True):
         """ Unpack a raw byte string into a unicode value """
-        fmt = ('>' if big_endian else '<') + str(self.count) + 's'
+        fmt = ('>' if big_endian else '<') + str(self.size()) + 's'
         raw_value = struct.unpack(fmt, raw)[0]
         stripped = raw_value.rstrip(b'\x00')
         self._value = six.text_type(stripped.decode(self.encoding))
 
-class Packet(BaseField):
-    """ Sub-packet (Variable size) """
-    def __init__(self, name, default, count=1):
-        super(Packet, self).__init__(name, '_', count, default)
+class List(SizedField):
+    """ List of fields (Variable size) """
+    def __init__(self, name=None, field=None, **kwargs):
+        self._field = field
+        super(List, self).__init__(name=name, **kwargs)
 
-    def pack(self, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
-        """ Hack the packet pack itself """
-        return self._value.pack()
+    def _create_field(self, value=None):
+        """ Create a new field instance with the optional value """
+        field = copy.deepcopy(self._field)
+        if value:
+            field.set(value)
+        field._register(self._parent) #pylint: disable=protected-access
+        return field
 
-    def unpack(self, raw, *args, **kwargs): #pylint: disable=arguments-differ, unused-argument
-        """ Have the packet unpack the raw data """
-        self._value.unpack(raw)
+    def _size_val(self, value):
+        # Ensure the value is a list of fields with their internal values set
+        if isinstance(value, (list, tuple)):
+            fields = [self._create_field(x) for x in value]
+        elif value:
+            fields = [self._create_field(value)]
+        else:
+            fields = []
+
+        # Only modify the size of the list if the the field has a static size
+        if isinstance(self._size, six.integer_types):
+            remainder = self._size - len(fields)
+            for _ in range(remainder):
+                field = self._create_field()
+                fields.append(field)
+            fields = fields[:self._size]
+
+        return fields
+
+    @property
+    def value(self):
+        """ Read only value to force set and rest commands """
+        raw_values = []
+        for field in self._value:
+            raw_values.append(field.value)
+        return raw_values
+
+    def size(self):
+        """ Size of the field is the sum of the all nested fields """
+        # In order to facilitate the edge case of a dynamically sized field
+        #  whose size has been updated, but the underlying list hasn't changed
+        #  size yet, we generate a copy of the fields list at the expected size
+        #  and use that to calculate the total size instead. The new fields
+        #  aren't saved because it feels wrong to have size be a non const safe
+        #  operation.
+        if self._value is None:
+            fields = []
+        else:
+            fields = self._value
+
+        if self._size is None:
+            size = len(fields)
+        elif isinstance(self._size, six.string_types) and self._parent is not None:
+            size = self._parent[self._size]
+        elif isinstance(self._size, six.string_types) and self._parent is None:
+            size = 0
+        else:
+            size = self._size
+
+        remainder = size - len(fields)
+        for _ in range(remainder):
+            field = self._create_field()
+            fields.append(field)
+        fields = fields[:size]
+
+        result = 0
+        for field in self._value:
+            result += field.size()
+        return result
+
+    def pack(self, big_endian=True):
+        """ Pack the list of sub-fields into bytes """
+        data = b''
+        if isinstance(self._value, (list, tuple)):
+            for field in self._value:
+                data += field.pack()
+        return data
+
+    def unpack(self, raw, big_endian=True):
+        """ Unpack the raw data into the sub-fields """
+        # Unpacking requires knowing the underlying size of the data before hand
+        if self._size is None:
+            raise RuntimeError("Can't unpack raw data into a field of variable size")
+
+        assert len(raw) == self.size()
+        start = 0
+        for field in self._value:
+            size = field.size()
+            end = start + size
+            sub_raw = raw[start:end]
+            field.unpack(sub_raw)
+            start = end

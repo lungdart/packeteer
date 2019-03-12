@@ -17,7 +17,7 @@ class Request(packets.BigEndian):
     """ Request packet """
     fields = [
         fields.UInt8('type'),
-        fields.UInt32('size'),
+        fields.UInt8('size'),
         fields.Raw('data', size='size')
     ]
 
@@ -30,7 +30,7 @@ class Response(packets.BigEndian):
 
 if __name__ == '__main__':
     data = b'Hello World'
-    request = RequestPacket(type=0, size=len(data), data=data)
+    request = RequestPacket(type=0, data=data)
     response = ResponsePacket()
 
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -86,7 +86,7 @@ class MyPacketBE(packets.BigEndian):
     ]
 
 class MyPacketLE(packets.LittleEndian):
-    ''' Custom (Little Endian) '''
+    """ Custom (Little Endian) """
     fields = copy.deepcopy(MyPacketBE.fields)
 ```
 
@@ -101,7 +101,7 @@ When packet objects are constructed without any parameters, their default values
 from packeteer import packets, fields
 
 class MyPacket(packets.BigEndian):
-    ''' Custom (Big Endian) '''
+    """ Custom (Big Endian) """
     fields = [
         fields.Bool('OK'),
         fields.Int32('value', default=42)
@@ -207,141 +207,74 @@ Padding bytes are nameless and not associated with any value; They can't be acce
 from packeteer import packets, fields
 
 class PaddedPacket(packets.BigEndian):
-    ''' Padded '''
+    """ Padded """
     fields = [
-        fields.Padding(count=4),
+        fields.Padding(),
         fields.UInt8('value'),
-        fields.Padding(count=2)
+        fields.Padding(default=b'\xff')
     ]
 
-packet = PaddedPacket(value=255)
+packet = PaddedPacket(value=170)
 print(repr(packet))
 # <Packet: Padded>
-#   value: 255
+#   value: 170
 
 print(packet[0])
-# 255
+# 170
 
 print(packet[1])
 # IndexError
 
-
 raw = packet.pack()
 print(repr(raw))
-# '\x00\x00\x00\x00\xFF\x00\x00'
+# '\x00\xAA\xFF'
 
-packet.unpack(b'\x00\x00\x00\x00\x7F\x00\x00')
+packet.unpack(b'\x00\x7f\xff')
 print(repr(packet))
 # <Packet: Padded>
 #   value: 127
 ```
 
 #### Raw data and strings
-*fields.Raw* behaves like a multi-count *field.Char* with some small differences
-* There is no count argument, size argument indicating the size of the data
-* The value is stored as a single byte string, not a list of characters
-```python
-from packeteer import packets, fields
-
-class RawPacket(packets.BigEndian):
-    ''' Raw vs Char'''
-    fields = [
-        fields.Char('chars', count=12),
-        fields.Raw('raw', size=12)
-    ]
-
-msg = 'Hello World'
-packet = StringPacket(chars=[x for x in msg], raw=msg)
-print(repr(packet))
-# <Packet: String vs Char>
-#   chars: ['H', 'e', 'l', 'l', 'o', ' ', 'W', 'o', 'r', 'l', 'd', '\x00']
-#   raw: b'Hello World\x00'
-```
+*fields.Raw* is a raw byte store of a given size (The size argument is required). If the data is too large for the field, it will be truncated to fit. Likewise if it is too short, it will be padded with null bytes.
 
 *fields.String* is an extension of *fields.Raw* that stores it's internal value as a unicode string with the encoding of your choosing (Defaults to utf8). The internal value has any trailing null byte padding removed until it is serialized.
+
 ```python
 from packeteer import packets, fields
 
-class StringPacket(packets.BigEndian):
-    ''' String vs Raw'''
+class DataPacket(packets.BigEndian):
+    """ Data Packet """
     fields = [
-        fields.Raw('raw', count=12),
+        fields.Raw('raw', size=12),
         fields.String('string', size=12, encoding='utf8')
     ]
 
-msg = 'Hello World'
-packet = StringPacket(raw=msg, string=msg)
+packet = DataPacket(raw=b'Hello World', string='Hello World')
 print(repr(packet))
-# <Packet: String vs Raw>
+# <Packet: Raw Packet>
 #   raw: b'Hello World\x00'
-#   string: u'Hello World'
+#   string: u'Hellow World'
 ```
 
 
-
-#### Multi-count fields
-Most field (Excluding *fields.String* and *fields.Raw*) have a count argument that can be used to denote multiple entries of the same field being repeated in the raw byte stream. These multi-count fields have values that behave like lists.
-
-```python
-from packeteer import packets, fields
-
-class CountPacket(packets.BigEndian):
-    ''' Multi-count '''
-    fields = [fields.Int32('value', count=4)]
-
-packet = CountPacket(value=(42, 33, 1, 999))
-print(repr(packet))
-# <Packet: Multi-count>
-#   value: [42, 33, 1, 999]
-
-packet['value'] = [0, 0, 0, 0]
-print(repr(packet))
-# <Packet: Multi-count>
-#   value: [0, 0, 0, 0]
-
-packet['value'][2] = 42
-print(repr(packet))
-# <Packet: Multi-count>
-#   value: [0, 0, 42, 0]
-```
-
-#### Dynamic-count fields
-Many packets often have a list like structure with repeating entries, or variable size data/string sections. These fields sizes are usually given as the previous value. **Packeteer** can handle these as well! When using the count or size parameter, instead of a static value, you can pass the name of another field in the same packet, and the count will be read from that value dynamically. Note that the result_count is dynamically updated to the length of the results value.
+#### List fields
+There are often times when you need to have a variable list of values in a packet (Think about a repeating set of values depending on a given count value). *fields.List* takes care of this. *fields.List* requires an additional argument of the field the list contains, with the rest of the arguments given as keywords that the underlying field type requires.
 
 ```python
 from packeteer import packets, fields
 
 class ListPacket(packets.BigEndian):
-    ''' Result List '''
+    """ List Packet """
     fields = [
-        fields.UInt8('result_count'),
-        fields.Bool('results', count='result_count')
+        fields.UInt8('count')
+        fields.List('messages', fields.String, size=128),
     ]
 
-class DataPacket(packets.BigEndian):
-    ''' Variable Length Data '''
-    fields = [
-        fields.UInt8('data_size'),
-        fields.Raw('data', size='data_size')
-    ]
-
-results = [True, False, True, False, False]
-packet1 = ListPacket(results=results)
-print(repr(packet1))
-# <Packet: Result List>
-#   result_count: 5
-#   results: [True, False, True, False, False]
-
-packet1['results'] = [False, False]
-print(repr(packet1))
-# <Packet: Result List>
-#   result_count: 2
-#   results: [False, False]
-
-data = b''.join([bytes([x]) for x in range(8)])
-packet2 = DataPacket(data=data)
-print(repr(packet2))
-# <Packet: Variable Length Data>
-#   data_size: 8
-#   data: b'\x00\x01\x02\x03\x04\x05\x06\x07'
+messages = ['foo', 'bar', 'Hello World']
+packet = ListPacket(count=len(messages), messages=messages)
+print(repr(packet))
+# <Packet: List Packet>
+#   count: 3
+#   messages: [u'foo', u'bar', u'Hello World']
 ```

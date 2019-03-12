@@ -2,10 +2,9 @@
 #pylint: disable=C0326,W0621
 from __future__ import unicode_literals
 import copy
-from builtins import bytes #pylint: disable=redefined-builtin
 import six
 import pytest #pylint: disable=unused-import
-from tests.values import good_values, set_values #pylint: disable=unused-import
+from tests.values.simple import good_values, set_values #pylint: disable=unused-import
 from packeteer import packets, fields
 
 ### First example
@@ -13,7 +12,7 @@ class RequestPacket(packets.BigEndian):
     """ Request packet """
     fields = [
         fields.UInt8('type'),
-        fields.UInt32('size'),
+        fields.UInt8('size'),
         fields.Raw('data', size='size')
     ]
 
@@ -27,11 +26,11 @@ class ResponsePacket(packets.BigEndian):
 def test_example():
     """ Test the header example in the README """
     data = b'Hello World'
-    request = RequestPacket(type=0, size=len(data), data=data)
+    request = RequestPacket(type=0, data=data)
     assert request.name == 'Request packet'
     assert request['type'] == 0
-    assert request['size'] == 11
-    assert request['data'] == b'Hello World'
+    assert request['size'] == len(data)
+    assert request['data'] == data
 
     response = ResponsePacket()
     raw = b'\x01\x00\x00\x00\x0B'
@@ -139,94 +138,53 @@ def test_field_existence():
 class PaddedPacket(packets.BigEndian):
     """ Padded """
     fields = [
-        fields.Padding(count=4),
+        fields.Padding(),
         fields.UInt8('value'),
-        fields.Padding(count=2)
+        fields.Padding(default=b'\xff')
     ]
 
 def test_padding():
     """ Test the padding section of the README """
-    packet = PaddedPacket(value=255)
-    assert packet[0] == 255
+    packet = PaddedPacket(value=170)
+    assert packet[0] == 170
     with pytest.raises(IndexError):
         packet[1] #pylint: disable=pointless-statement
 
     raw = packet.pack()
-    assert raw == b'\x00\x00\x00\x00\xFF\x00\x00'
+    assert raw == b'\x00\xaa\xff'
 
-    packet.unpack(b'\x00\x00\x00\x00\x7F\x00\x00')
+    packet.unpack(b'\x00\x7F\xff')
     assert packet[0] == 127
 
 ### Strings and Raw data
-class RawPacket(packets.BigEndian):
-    """ Raw vs Char """
-    fields = [
-        fields.Char('chars', count=12),
-        fields.Raw('raw', size=12)
-    ]
-class StringPacket(packets.BigEndian):
-    """ String vs Raw """
+class DataPacket(packets.BigEndian):
+    """ Data Packet """
     fields = [
         fields.Raw('raw', size=12),
-        fields.String('string', size=12)
+        fields.String('string', size=12, encoding='utf8')
     ]
 
 def test_raw_and_strings():
     """ Test the strings and raw data section of the README """
     msg = b'Hello World'
-    chars = [bytes([x]) for x in msg]
-    packet = RawPacket(chars=chars, raw=msg)
-    assert packet['chars'] == chars + [b'\x00']
-    assert packet['raw'] == msg + b'\x00'
-
-    packet = StringPacket(raw=msg, string=six.text_type(msg, encoding='utf8'))
+    packet = DataPacket(raw=msg, string=six.text_type(msg, encoding='utf8'))
     assert packet['raw'] == msg + b'\x00'
     assert packet['string'] == six.text_type(msg, encoding='utf8')
 
-### Multi-count fields
-class CountPacket(packets.BigEndian):
-    """ Multi-count """
-    fields = [fields.Int32('value', count=4)]
-
-def test_multi_count():
-    """ Test the multi count section of the README """
-    packet = CountPacket(value=(42, 33, 1, 999))
-    assert packet['value'] == [42, 33, 1, 999]
-
-    packet['value'] = [0, 0, 0, 0]
-    assert packet['value'] == [0, 0, 0, 0]
-
-    packet['value'][2] = 42
-    assert packet['value'] == [0, 0, 42, 0]
-
-### Dynamic count fields
+### List fields
 class ListPacket(packets.BigEndian):
-    """ Result List """
+    """ List Packet """
     fields = [
-        fields.UInt8('result_count'),
-        fields.Bool('results', count='result_count')
+        fields.UInt8('count'),
+        fields.List('messages', fields.String(size=128), size='count'),
     ]
 
-class DataPacket(packets.BigEndian):
-    """ Variable Length Data """
-    fields = [
-        fields.UInt8('data_size'),
-        fields.Raw('data', size='data_size')
-    ]
 
-def test_dynamic_count():
-    """ Test the dynamic count section of the README """
-    results = [True, False, True, False, False]
-    packet = ListPacket(results=results)
-    assert packet['result_count'] == len(results)
-    assert packet['results'] == results
-
-    results = [False, False]
-    packet['results'] = results
-    assert packet['result_count'] == len(results)
-    assert packet['results'] == results
-
-    data = b''.join([bytes([x]) for x in range(8)])
-    packet = DataPacket(data=data)
-    assert packet['data_size'] == len(data)
-    assert packet['data'] == data
+def test_list():
+    """ Test the list field section of the README """
+    messages = ['foo', 'bar', 'Hello World']
+    packet = ListPacket(messages=messages)
+    assert packet['count'] == len(packet['messages'])
+    assert packet['messages'][0] == messages[0]
+    assert packet['messages'][1] == messages[1]
+    assert packet['messages'][2] == messages[2]
