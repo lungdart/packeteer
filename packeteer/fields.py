@@ -59,20 +59,20 @@ class Field(object):
         if self.type is None:
             raise RuntimeError("Invalid field type {}".format(self.type))
         fmt = ('>' if big_endian else '<') + self.type
-        self._value = struct.unpack(fmt, raw)[0]
+        part = raw[:self.size()]
+        self._value = struct.unpack(fmt, part)[0]
 
     def size(self):
         """ Fetch the size of this field """
         if self.type in 'xcbB?s':
             return 1
-        elif self.type in 'hH':
+        if self.type in 'hH':
             return 2
-        elif self.type in 'iIf':
+        if self.type in 'iIf':
             return 4
-        elif self.type in 'qQd':
+        if self.type in 'qQd':
             return 8
-        else:
-            raise RuntimeError("Invalid field type {}".format(self.type))
+        raise RuntimeError("Invalid field type {}".format(self.type))
 
 class SizedField(Field):
     """ Variable sized field """
@@ -221,8 +221,10 @@ class Raw(SizedField):
 
     def unpack(self, raw, big_endian=True):
         """ Raw data always uses a size value and packs with null bytes """
-        fmt = ('>' if big_endian else '<') + str(self.size()) + 's'
-        self._value = struct.unpack(fmt, raw)[0]
+        size = self.size()
+        fmt = ('>' if big_endian else '<') + str(size) + 's'
+        part = raw[:size]
+        self._value = struct.unpack(fmt, part)[0]
 
 class String(SizedField):
     """ String Type (Variable Size) """
@@ -245,8 +247,10 @@ class String(SizedField):
 
     def unpack(self, raw, big_endian=True):
         """ Unpack a raw byte string into a unicode value """
-        fmt = ('>' if big_endian else '<') + str(self.size()) + 's'
-        raw_value = struct.unpack(fmt, raw)[0]
+        size = self.size()
+        fmt = ('>' if big_endian else '<') + str(size) + 's'
+        part = raw[:size]
+        raw_value = struct.unpack(fmt, part)[0]
         stripped = raw_value.rstrip(b'\x00')
         self._value = six.text_type(stripped.decode(self.encoding))
 
@@ -265,6 +269,7 @@ class List(SizedField):
         return field
 
     def _size_val(self, value):
+        """ Transform value(s) into a list of appropriate fields """
         # Ensure the value is a list of fields with their internal values set
         if isinstance(value, (list, tuple)):
             fields = [self._create_field(x) for x in value]
@@ -305,22 +310,22 @@ class List(SizedField):
             fields = self._value
 
         if self._size is None:
-            size = len(fields)
+            count = len(fields)
         elif isinstance(self._size, six.string_types) and self._parent is not None:
-            size = self._parent[self._size]
+            count = self._parent[self._size]
         elif isinstance(self._size, six.string_types) and self._parent is None:
-            size = 0
+            count = 0
         else:
-            size = self._size
+            count = self._size
 
-        remainder = size - len(fields)
+        remainder = count - len(fields)
         for _ in range(remainder):
             field = self._create_field()
             fields.append(field)
-        fields = fields[:size]
+        fields = fields[:count]
 
         result = 0
-        for field in self._value:
+        for field in fields:
             result += field.size()
         return result
 
@@ -338,11 +343,18 @@ class List(SizedField):
         if self._size is None:
             raise RuntimeError("Can't unpack raw data into a field of variable size")
 
-        assert len(raw) == self.size()
+        if isinstance(self._size, six.string_types) and self._parent is not None:
+            size = self._parent[self._size]
+        elif isinstance(self._size, six.string_types) and self._parent is None:
+            size = 0
+        else:
+            size = self._size
+
         start = 0
-        for field in self._value:
-            size = field.size()
-            end = start + size
-            sub_raw = raw[start:end]
-            field.unpack(sub_raw)
-            start = end
+        self._value = []
+        for _ in range(size):
+            part = raw[start:]
+            field = self._create_field()
+            field.unpack(part)
+            self._value.append(field)
+            start += field.size()

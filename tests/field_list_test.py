@@ -46,6 +46,7 @@ class SubpacketPacket(packets.BigEndian):
     ]
 
 ### TESTS ###
+#@pytest.mark.skip()
 def test_variable_list():
     """ Test unsized (variable) list of simple type fields """
     data = [1, 2, 3]
@@ -58,6 +59,7 @@ def test_variable_list():
     packet['list'] = 4
     assert packet['list'] == [4]
 
+#@pytest.mark.skip()
 def test_static_list():
     """ Test statically sized list of simple type fields """
     data = [1, 2, 3]
@@ -77,6 +79,7 @@ def test_static_list():
     packet1['list'] = 4
     assert packet1['list'] == [4, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
+#@pytest.mark.skip()
 def test_dynamic_list():
     """ Test dynamically sized list of simple type fields """
     data = [1, 2, 3]
@@ -93,9 +96,9 @@ def test_dynamic_list():
     raw2    = struct.pack('>HBBB', count, *data)
     packet3 = DynamicPacket()
     packet3.unpack(raw2)
+    assert raw1 == raw2
     assert packet3['count'] == count
     assert packet3['list']  == data
-    assert raw1 == raw2
 
     packet4 = DynamicPacket()
     assert packet4['count'] == 0
@@ -105,6 +108,7 @@ def test_dynamic_list():
     assert packet4['count'] == 1
     assert packet4['list']  == [4]
 
+#@pytest.mark.skip()
 def test_raw_list():
     """ Test list of raw data fields """
     data = [b'foo', b'bar', b'Hello World']
@@ -127,9 +131,9 @@ def test_raw_list():
     raw2    = struct.pack(fmt, count, *data)
     packet3 = RawPacket()
     packet3.unpack(raw2)
+    assert raw1 == raw2
     assert packet3['count'] == count
     assert packet3['list']  == expected
-    assert raw1 == raw2
 
     packet4 = RawPacket()
     assert packet4['count'] == 0
@@ -140,6 +144,7 @@ def test_raw_list():
     assert packet4['count'] == 1
     assert packet4['list']  == expected
 
+#@pytest.mark.skip()
 def test_packet_list():
     """ Test list of subpacket fields """
     count = 5
@@ -159,9 +164,9 @@ def test_packet_list():
     raw2    = struct.pack('>HBBBBBBBBBB', count, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9)
     packet3 = SubpacketPacket()
     packet3.unpack(raw2)
+    assert raw1 == raw2
     assert packet3['count'] == count
     assert packet3['list']  == data
-    assert raw1 == raw2
 
     packet4 = SubpacketPacket()
     assert packet4['count'] == 0

@@ -1,5 +1,5 @@
 """ Packet base class and common derivatives """
-from __future__ import unicode_literals, print_function
+from __future__ import unicode_literals
 import copy
 import six
 from packeteer import fields
@@ -125,13 +125,12 @@ class BasePacket(object):
         """ Unpack a raw byte string into this packets fields """
         start = 0
         for field in self.fields:
-            end = start + field.size()
-            part = raw[start:end]
+            part = raw[start:]
             # Stop early when the the raw data falls short of unpacking the field
             if partial and len(part) < field.size():
                 break
             field.unpack(part, big_endian=self.big_endian)
-            start = end
+            start += field.size()
 
     def clear(self):
         """ Clear all field values to their defaults """
