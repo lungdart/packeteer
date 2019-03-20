@@ -17,7 +17,7 @@ URL = 'https://github.com/lungdart/packeteer'
 EMAIL = 'dev@lungdart.net'
 AUTHOR = 'lungdart'
 REQUIRES_PYTHON = '>=2.7.0'
-VERSION = '0.3'
+VERSION = '0.4'
 
 # What packages are required for this module to be executed?
 REQUIRED = ['future', 'six']
